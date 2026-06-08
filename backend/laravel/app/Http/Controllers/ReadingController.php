@@ -6,111 +6,100 @@ use App\Http\Requests\StoreReadingRequest;
 use App\Http\Requests\UpdateReadingRequest;
 use App\Models\Project;
 use App\Models\Reading;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 
 class ReadingController extends Controller
 {
-    public function index(Request $request, Project $project): Response
+    /**
+     * POST /projects/{project}/readings
+     *
+     * sequence_no di-auto-increment — tidak boleh di-input user
+     * karena "ORDER IS CRITICAL — never skip or reuse" (database.md).
+     * Observer akan otomatis dispatch RecalculateSurveyJob setelah created.
+     */
+    public function store(StoreReadingRequest $request, Project $project): RedirectResponse
     {
-        $this->authorizeProject($request, $project);
+        $this->authorize('update', $project);
 
-        $readings = $project->readings()
-            ->orderBy('sequence_no')
-            ->get();
+        $nextSeq = ($project->readings()->max('sequence_no') ?? 0) + 1;
 
-        return Inertia::render('Readings/Index', [
-            'project'  => $project,
-            'readings' => $readings,
+        $project->readings()->create(
+            array_merge($request->validated(), ['sequence_no' => $nextSeq])
+        );
+
+        return back()->with('flash', [
+            'type'    => 'success',
+            'message' => 'Bacaan disimpan. Perhitungan ulang dijadwalkan.',
         ]);
     }
 
-    public function create(Request $request, Project $project): Response
+    /**
+     * PUT /projects/{project}/readings/{reading}
+     *
+     * Update hanya field yang diizinkan oleh UpdateReadingRequest.
+     * sequence_no TIDAK boleh diubah setelah tersimpan — immutable by design.
+     * Observer akan otomatis dispatch RecalculateSurveyJob setelah updated.
+     */
+    public function update(UpdateReadingRequest $request, Project $project, Reading $reading): RedirectResponse
     {
-        $this->authorizeProject($request, $project);
+        $this->authorize('update', $project);
 
-        $nextSeq = $project->readings()->max('sequence_no') + 1;
-
-        return Inertia::render('Readings/Create', [
-            'project' => $project,
-            'nextSeq' => $nextSeq,
-        ]);
-    }
-
-    public function store(StoreReadingRequest $request, Project $project): \Illuminate\Http\RedirectResponse
-    {
-        $this->authorizeProject($request, $project);
-
-        // sequence_no harus unik per proyek
-        $exists = $project->readings()
-            ->where('sequence_no', $request->sequence_no)
-            ->exists();
-
-        if ($exists) {
-            return back()->withErrors(['sequence_no' => 'Sequence number sudah digunakan.']);
-        }
-
-        $project->readings()->create($request->validated());
-
-        // Observer akan dispatch RecalculateSurveyJob otomatis
-
-        return redirect()
-            ->route('projects.show', $project)
-            ->with('success', 'Data bacaan berhasil disimpan.');
-    }
-
-    public function edit(Request $request, Project $project, Reading $reading): Response
-    {
-        $this->authorizeProject($request, $project);
-        $this->authorizeReading($project, $reading);
-
-        return Inertia::render('Readings/Edit', [
-            'project' => $project,
-            'reading' => $reading,
-        ]);
-    }
-
-    public function update(UpdateReadingRequest $request, Project $project, Reading $reading): \Illuminate\Http\RedirectResponse
-    {
-        $this->authorizeProject($request, $project);
-        $this->authorizeReading($project, $reading);
+        // Pastikan reading memang milik project ini
+        abort_if($reading->project_id !== $project->id, 404);
 
         $reading->update($request->validated());
 
-        // Observer akan dispatch RecalculateSurveyJob otomatis
-
-        return redirect()
-            ->route('projects.show', $project)
-            ->with('success', 'Data bacaan berhasil diperbarui.');
+        return back()->with('flash', [
+            'type'    => 'success',
+            'message' => 'Bacaan berhasil diperbarui.',
+        ]);
     }
 
-    public function destroy(Request $request, Project $project, Reading $reading): \Illuminate\Http\RedirectResponse
+    /**
+     * DELETE /projects/{project}/readings/{reading}
+     *
+     * Engineering Rule #10: "Never hard-delete readings — preserve survey history permanently"
+     * (engineering-rules.md baris 10)
+     *
+     * Karena schema readings belum punya deleted_at (soft delete),
+     * delete HANYA diizinkan jika:
+     *   - Status proyek masih 'draft' atau 'calculated'
+     *   - Reading adalah entri TERAKHIR (sequence_no tertinggi)
+     *
+     * Alasan pembatasan ke reading terakhir: menghapus di tengah akan
+     * membuat sequence_no berlubang — melanggar "never skip or reuse".
+     * Observer akan otomatis dispatch RecalculateSurveyJob setelah deleted.
+     */
+    public function destroy(Request $request, Project $project, Reading $reading): RedirectResponse
     {
-        $this->authorizeProject($request, $project);
-        $this->authorizeReading($project, $reading);
+        $this->authorize('update', $project);
 
-        // Engineering rule: never hard-delete — soft delete tidak dipakai
-        // tapi data tetap preserve dengan cara memindahkan ke arsip jika perlu.
-        // Untuk sekarang: hard delete diizinkan hanya jika project masih draft.
-        abort_unless($project->isDraft(), 403, 'Readings hanya bisa dihapus saat proyek masih draft.');
+        // Pastikan reading memang milik project ini
+        abort_if($reading->project_id !== $project->id, 404);
+
+        // Hanya boleh dihapus saat status draft atau calculated
+        if (! in_array($project->status, ['draft', 'calculated'], true)) {
+            return back()->with('flash', [
+                'type'    => 'error',
+                'message' => 'Bacaan hanya dapat dihapus pada proyek berstatus draft atau calculated.',
+            ]);
+        }
+
+        // Hanya boleh hapus reading terakhir — menjaga integritas sequence_no
+        $lastSeq = $project->readings()->max('sequence_no');
+        if ($reading->sequence_no !== $lastSeq) {
+            return back()->with('flash', [
+                'type'    => 'error',
+                'message' => 'Hanya bacaan terakhir (sequence tertinggi) yang dapat dihapus untuk menjaga urutan data.',
+            ]);
+        }
 
         $reading->delete();
 
-        // Observer akan dispatch RecalculateSurveyJob otomatis
-
-        return redirect()
-            ->route('projects.show', $project)
-            ->with('success', 'Data bacaan berhasil dihapus.');
-    }
-
-    private function authorizeProject(Request $request, Project $project): void
-    {
-        abort_unless($project->user_id === $request->user()->id, 403);
-    }
-
-    private function authorizeReading(Project $project, Reading $reading): void
-    {
-        abort_unless($reading->project_id === $project->id, 404);
+        return back()->with('flash', [
+            'type'    => 'success',
+            'message' => 'Bacaan dihapus. Perhitungan ulang dijadwalkan.',
+        ]);
     }
 }

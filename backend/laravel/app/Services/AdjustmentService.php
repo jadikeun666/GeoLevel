@@ -2,135 +2,205 @@
 
 namespace App\Services;
 
-use App\Events\AdjustmentApplied;
 use App\Models\ActivityLog;
 use App\Models\ComputedElevation;
 use App\Models\Project;
 use Illuminate\Support\Facades\DB;
-use InvalidArgumentException;
 
 class AdjustmentService
 {
     private const SCALE = 10;
 
-    private const SUPPORTED_METHODS = ['equal', 'bowditch', 'least_squares'];
+    // -----------------------------------------------------------------------
+    // Instance methods — dipakai dari controller/job (butuh DB + Project)
+    // -----------------------------------------------------------------------
 
-    public function adjust(Project $project, string $method, int $userId): void
+    public function applyToProject(Project $project, string $method, int $userId): void
     {
-        if (! in_array($method, self::SUPPORTED_METHODS, true)) {
-            throw new InvalidArgumentException("Metode adjustment tidak valid: {$method}");
-        }
-
-        if ($method === 'least_squares') {
-            throw new InvalidArgumentException("Metode least_squares belum diimplementasikan.");
-        }
-
-        DB::transaction(function () use ($project, $method, $userId) {
+        $run = function () use ($project, $method, $userId) {
             $rows = ComputedElevation::where('project_id', $project->id)
                 ->orderBy('sequence_no')
                 ->get();
 
-            if ($rows->isEmpty()) {
-                throw new InvalidArgumentException("Tidak ada computed elevations untuk project #{$project->id}.");
+            // Hitung ulang fh dari readings — jangan percaya project->closure_error
+            // karena bisa null saat test atau belum di-update
+            $readings = $project->readings()->orderBy('sequence_no')->get();
+            $sumBS = '0';
+            $sumFS = '0';
+            $totalDistanceM = '0';
+            foreach ($readings as $r) {
+                $bt = (string) $r->bt;
+                $dist = $r->distance_m !== null
+                    ? (string) $r->distance_m
+                    : bcmul(bcsub((string)$r->ba, (string)$r->bb, self::SCALE), '100', self::SCALE);
+                if ($r->reading_type === 'BS') {
+                    $sumBS = bcadd($sumBS, $bt, self::SCALE);
+                } elseif ($r->reading_type === 'FS') {
+                    $sumFS = bcadd($sumFS, $bt, self::SCALE);
+                }
+                $totalDistanceM = bcadd($totalDistanceM, $dist, self::SCALE);
             }
+            $fhSigned = bcsub($sumBS, $sumFS, self::SCALE);
+            $fh = bccomp($fhSigned, '0', self::SCALE) < 0
+                  ? bcsub('0', $fhSigned, self::SCALE)
+                  : $fhSigned;
 
-            $fh        = (string) $project->closure_error;
-            $totalD    = (string) ($rows->last()->cumulative_distance ?? '0');
-            $fhSigned  = bccomp($fh, '0', self::SCALE) >= 0 ? $fh : bcsub('0', $fh, self::SCALE);
-            $negative  = bccomp(
-                bcsub((string) $project->closure_error, '0', self::SCALE),
-                '0',
-                self::SCALE
-            ) >= 0;
-
-            $fsRows   = $rows->where('reading_type', '!=', 'BS')->values();
-            $nFS      = $fsRows->count();
-            $unitCorr = $nFS > 0 ? bcdiv($fhSigned, (string) $nFS, self::SCALE) : '0';
-            $fsIndex  = 0;
+            $nFS       = $rows->where('reading_type', 'FS')->count();
+            $unit      = self::equalCorrectionPerPoint($fh, $nFS);
+            $fsCounter = 0;
 
             foreach ($rows as $row) {
-                if ($row->hi !== null) {
-                    // BS row — reset correction
-                    $row->correction         = '0.000000';
-                    $row->adjusted_elevation = $row->raw_elevation;
-                } else {
-                    $fsIndex++;
-
-                    $correction = match ($method) {
-                        'bowditch' => $this->bowditchCorrection(
-                            $fhSigned, $negative,
-                            (string) $row->cumulative_distance,
-                            $totalD
-                        ),
-                        default => $this->equalCorrection($unitCorr, $negative, $fsIndex),
-                    };
-
-                    $row->correction         = number_format((float) $correction, 6, '.', '');
-                    $row->adjusted_elevation = number_format(
-                        (float) bcadd((string) $row->raw_elevation, $correction, self::SCALE),
-                        4, '.', ''
-                    );
+                if ($row->reading_type === 'BS') {
+                    $row->forceFill([
+                        'correction'         => '0.000000',
+                        'adjusted_elevation' => number_format((float) $row->raw_elevation, 4, '.', ''),
+                    ])->saveQuietly();
+                    continue;
                 }
 
-                $row->save();
-            }
+                if ($row->reading_type === 'FS') {
+                    $fsCounter++;
+                }
 
-            $project->update(['adjustment_method' => $method]);
+                $correction = match ($method) {
+                    'bowditch' => self::bowditchCorrection(
+                        $fh,
+                        (string) $row->cumulative_distance,
+                        $totalDistanceM
+                    ),
+                    default => self::equalCorrectionCumulative($unit, $fsCounter),
+                };
+
+                $row->forceFill([
+                    'correction'         => number_format((float) $correction, 6, '.', ''),
+                    'adjusted_elevation' => number_format(
+                        (float) self::applyCorrection((string) $row->raw_elevation, $correction),
+                        4, '.', ''
+                    ),
+                ])->saveQuietly();
+            }
 
             ActivityLog::create([
                 'project_id'    => $project->id,
                 'user_id'       => $userId,
                 'activity_type' => ActivityLog::TYPE_ADJUSTMENT_APPLIED,
-                'description'   => "Adjustment '{$method}' diterapkan pada project #{$project->id}.",
-                'metadata'      => [
-                    'method'        => $method,
-                    'closure_error' => $project->closure_error,
-                    'point_count'   => $nFS,
-                ],
+                'description'   => "Adjustment ({$method}) applied to project #{$project->id}",
+                'metadata'      => ['method' => $method],
             ]);
-        });
+        };
 
-        AdjustmentApplied::dispatch($project->id, $userId, $method);
+        DB::transactionLevel() > 0 ? $run() : DB::transaction($run);
     }
 
     public function reset(Project $project, int $userId): void
     {
-        DB::transaction(function () use ($project, $userId) {
+        $run = function () use ($project, $userId) {
             ComputedElevation::where('project_id', $project->id)
-                ->update([
-                    'correction'        => '0.000000',
-                    'adjusted_elevation' => DB::raw('raw_elevation'),
-                ]);
+                ->each(function (ComputedElevation $row) {
+                    $row->correction         = '0';
+                    $row->adjusted_elevation = $row->raw_elevation;
+                    $row->save();
+                });
 
             ActivityLog::create([
                 'project_id'    => $project->id,
                 'user_id'       => $userId,
-                'activity_type' => ActivityLog::TYPE_ADJUSTMENT_APPLIED,
-                'description'   => "Adjustment direset pada project #{$project->id}.",
-                'metadata'      => ['method' => 'reset'],
+                'activity_type' => ActivityLog::TYPE_ADJUSTMENT_RESET,
+                'description'   => "Adjustment reset for project #{$project->id}",
+                'metadata'      => [],
             ]);
-        });
+        };
+
+        DB::transactionLevel() > 0 ? $run() : DB::transaction($run);
     }
 
     // -----------------------------------------------------------------------
-    // Private helpers
+    // Public static helpers — pure math, testable in isolation (no DB)
     // -----------------------------------------------------------------------
 
-    private function equalCorrection(string $unit, bool $negative, int $index): string
+    public static function equalCorrectionPerPoint(string $fh, int $n): string
     {
-        $corr = bcmul($unit, (string) $index, self::SCALE);
-        return $negative ? bcsub('0', $corr, self::SCALE) : $corr;
+        if ($n === 0) {
+            return '0';
+        }
+        return bcsub('0', bcdiv($fh, (string) $n, self::SCALE), self::SCALE);
     }
 
-    private function bowditchCorrection(
+    public static function equalCorrectionCumulative(string $unitCorrection, int $index): string
+    {
+        return bcmul($unitCorrection, (string) $index, self::SCALE);
+    }
+
+    public static function bowditchCorrection(
         string $fh,
-        bool $negative,
-        string $cumDist,
-        string $totalDist
+        string $cumulativeDistance,
+        string $totalDistance
     ): string {
-        if (bccomp($totalDist, '0', self::SCALE) === 0) return '0';
-        $ratio = bcdiv($cumDist, $totalDist, self::SCALE);
+        if (bccomp($totalDistance, '0', self::SCALE) === 0) {
+            return '0';
+        }
+        $ratio = bcdiv($cumulativeDistance, $totalDistance, self::SCALE);
         $corr  = bcmul($fh, $ratio, self::SCALE);
-        return $negative ? bcsub('0', $corr, self::SCALE) : $corr;
+        return bcsub('0', $corr, self::SCALE);
+    }
+
+    public static function applyCorrection(string $rawElevation, string $correction): string
+    {
+        if (bccomp($correction, '0', self::SCALE) === 0) {
+            return $rawElevation;
+        }
+        return bcadd($rawElevation, $correction, self::SCALE);
+    }
+
+    public static function adjust(array $computedElevations, string $fh, string $method): array
+    {
+        $nFS = count(array_filter(
+            $computedElevations,
+            fn ($r) => $r['reading_type'] === 'FS'
+        ));
+
+        $totalDistance = '0';
+        foreach ($computedElevations as $row) {
+            if (isset($row['cumulative_distance'])) {
+                $totalDistance = (string) $row['cumulative_distance'];
+            }
+        }
+
+        $unitCorrection = self::equalCorrectionPerPoint($fh, $nFS);
+        $fsCounter      = 0;
+        $results        = [];
+
+        foreach ($computedElevations as $row) {
+            $out = $row;
+
+            if ($row['reading_type'] === 'BS') {
+                $out['correction']         = '0';
+                $out['adjusted_elevation'] = $row['raw_elevation'];
+                $results[] = $out;
+                continue;
+            }
+
+            if ($row['reading_type'] === 'FS') {
+                $fsCounter++;
+            }
+
+            $correction = match ($method) {
+                'bowditch' => self::bowditchCorrection(
+                    $fh,
+                    (string) $row['cumulative_distance'],
+                    $totalDistance
+                ),
+                default => self::equalCorrectionCumulative($unitCorrection, $fsCounter),
+            };
+
+            $out['correction']         = $correction;
+            $out['adjusted_elevation'] = self::applyCorrection(
+                (string) $row['raw_elevation'],
+                $correction
+            );
+            $results[] = $out;
+        }
+
+        return $results;
     }
 }

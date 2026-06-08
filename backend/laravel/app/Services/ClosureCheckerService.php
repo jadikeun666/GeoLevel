@@ -8,12 +8,16 @@ use App\Models\Project;
 
 class ClosureCheckerService
 {
+    // -----------------------------------------------------------------------
+    // Closure sudah dihitung & disimpan oleh LevelingCalculationService.
+    // Service ini bertanggung jawab:
+    //   1. Log activity closure_checked
+    //   2. Dispatch ClosureChecked event untuk downstream listeners
+    // -----------------------------------------------------------------------
+
     public function check(int $projectId, int $userId): void
     {
         $project = Project::findOrFail($projectId);
-
-        // Hasil closure sudah dihitung & disimpan oleh LevelingCalculationService
-        // Service ini hanya dispatch event + log untuk memicu downstream listeners
 
         ActivityLog::create([
             'project_id'    => $projectId,

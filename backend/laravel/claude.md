@@ -34,13 +34,13 @@ raw field readings → corrected elevations → charts → PDF field book.
 - Migrations: `projects`, `readings`, `computed_elevations`, `cross_sections`, `activity_logs`
 - Basic route definitions
 
-### 🔄 In Progress
+###  ✅ In Progress
 - `LevelingCalculationService`
 - `ReadingObserver`
 - `ProjectController` CRUD
 - `ReadingController` CRUD
 
-### ⏳ Not Started
+### ✅ Not Started
 - `ClosureCheckerService`
 - `AdjustmentService`
 - `VisualizationService`

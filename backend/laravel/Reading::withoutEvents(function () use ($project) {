@@ -1,0 +1,18 @@
+[90m= [39m[34;4mApp\Models\Project[39;24m {#7619
+    [34muser_id[39m: [35m4[39m,
+    [34mname[39m: [32m"[39m[32mQuia laboriosam eos sapiente.[39m[32m"[39m,
+    [34mlocation[39m: [32m"[39m[32mDemondburgh[39m[32m"[39m,
+    [34msurvey_date[39m: [32m"[39m[32m2007-09-24 00:00:00[39m[32m"[39m,
+    [34mbenchmark_name[39m: [32m"[39m[32mBM-QP[39m[32m"[39m,
+    [34mbenchmark_elevation[39m: [32m"[39m[32m100.0000[39m[32m"[39m,
+    [34mtolerance_class[39m: [32m"[39m[32mLA[39m[32m"[39m,
+    [34madjustment_method[39m: [32m"[39m[32mequal[39m[32m"[39m,
+    [34mstatus[39m: [32m"[39m[32mdraft[39m[32m"[39m,
+    [34mclosure_error[39m: [32m"[39m[32m0.401000[39m[32m"[39m,
+    [34mallowed_tolerance[39m: [36mnull[39m,
+    [34mtotal_distance_km[39m: [32m"[39m[32m0.3756[39m[32m"[39m,
+    [34mmetadata[39m: [32m"[39m[32m[][39m[32m"[39m,
+    [34mupdated_at[39m: [32m"[39m[32m2026-06-07 15:33:48[39m[32m"[39m,
+    [34mcreated_at[39m: [32m"[39m[32m2026-06-07 15:33:48[39m[32m"[39m,
+    [34mid[39m: [35m4[39m,
+  }

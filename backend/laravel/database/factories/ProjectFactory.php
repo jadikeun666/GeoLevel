@@ -1,4 +1,5 @@
 <?php
+// ─── database/factories/ProjectFactory.php ────────────────────────────────
 
 namespace Database\Factories;
 
@@ -11,14 +12,22 @@ class ProjectFactory extends Factory
     {
         return [
             'user_id'             => User::factory(),
-            'name'                => fake()->words(3, true),
-            'location'            => fake()->city(),
-            'survey_date'         => fake()->date(),
-            'benchmark_name'      => 'BM-A',
-            'benchmark_elevation' => '100.0000',
+            'name'                => $this->faker->sentence(3),
+            'location'            => $this->faker->city(),
+            'survey_date'         => $this->faker->date(),
+            'benchmark_name'      => 'BM-' . strtoupper($this->faker->lexify('??')),
+            'benchmark_elevation' => number_format($this->faker->randomFloat(4, 50, 200), 4, '.', ''),
             'tolerance_class'     => 'LA',
             'adjustment_method'   => 'equal',
             'status'              => 'draft',
+            'closure_error'       => null,
+            'allowed_tolerance'   => null,
+            'total_distance_km'   => null,
+            'metadata'            => [],
         ];
     }
+
+    public function accepted(): static { return $this->state(['status' => 'accepted']); }
+    public function rejected(): static { return $this->state(['status' => 'rejected']); }
+    public function calculated(): static { return $this->state(['status' => 'calculated']); }
 }
