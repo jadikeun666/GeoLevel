@@ -235,4 +235,5 @@ class AdjustmentEndpointTest extends TestCase
             Reading::factory()->for($this->project)->create($data);
         }
     }
+    
 }

@@ -19,9 +19,10 @@ class ReadingObserver
 
     private function dispatch(Reading $reading): void
     {
-        RecalculateSurveyJob::dispatch(
-            $reading->project_id,
-            $reading->project->user_id,
-        );
+        // PERUBAHAN: Hapus argumen kedua $reading->project->user_id.
+        // Job constructor sekarang hanya terima $projectId — tidak perlu userId.
+        // Sebelumnya: RecalculateSurveyJob::dispatch($reading->project_id, $reading->project->user_id)
+        // Ini penyebab error "1 passed and exactly 2 expected" di factory test.
+        RecalculateSurveyJob::dispatch($reading->project_id);
     }
 }

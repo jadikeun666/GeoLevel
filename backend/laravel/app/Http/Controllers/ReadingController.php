@@ -6,7 +6,7 @@ use App\Http\Requests\StoreReadingRequest;
 use App\Http\Requests\UpdateReadingRequest;
 use App\Models\Project;
 use App\Models\Reading;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ReadingController extends Controller
@@ -14,92 +14,78 @@ class ReadingController extends Controller
     /**
      * POST /projects/{project}/readings
      *
-     * sequence_no di-auto-increment — tidak boleh di-input user
-     * karena "ORDER IS CRITICAL — never skip or reuse" (database.md).
+     * sequence_no di-auto-increment — tidak boleh di-input user.
      * Observer akan otomatis dispatch RecalculateSurveyJob setelah created.
+     *
+     * PERUBAHAN: Ganti return type dari RedirectResponse → JsonResponse.
+     * Test pakai postJson() yang set header Accept: application/json —
+     * kalau controller return redirect (302), test akan gagal karena
+     * mengharapkan status 201, bukan 302.
      */
-    public function store(StoreReadingRequest $request, Project $project): RedirectResponse
+    public function store(StoreReadingRequest $request, Project $project): JsonResponse
     {
         $this->authorize('update', $project);
 
         $nextSeq = ($project->readings()->max('sequence_no') ?? 0) + 1;
 
-        $project->readings()->create(
+        $reading = $project->readings()->create(
             array_merge($request->validated(), ['sequence_no' => $nextSeq])
         );
 
-        return back()->with('flash', [
-            'type'    => 'success',
-            'message' => 'Bacaan disimpan. Perhitungan ulang dijadwalkan.',
-        ]);
+        return response()->json(['data' => $reading], 201);
     }
 
     /**
      * PUT /projects/{project}/readings/{reading}
      *
-     * Update hanya field yang diizinkan oleh UpdateReadingRequest.
      * sequence_no TIDAK boleh diubah setelah tersimpan — immutable by design.
      * Observer akan otomatis dispatch RecalculateSurveyJob setelah updated.
+     *
+     * PERUBAHAN: Ganti return type dari RedirectResponse → JsonResponse (200).
      */
-    public function update(UpdateReadingRequest $request, Project $project, Reading $reading): RedirectResponse
+    public function update(UpdateReadingRequest $request, Project $project, Reading $reading): JsonResponse
     {
         $this->authorize('update', $project);
 
-        // Pastikan reading memang milik project ini
         abort_if($reading->project_id !== $project->id, 404);
 
         $reading->update($request->validated());
 
-        return back()->with('flash', [
-            'type'    => 'success',
-            'message' => 'Bacaan berhasil diperbarui.',
-        ]);
+        return response()->json(['data' => $reading->fresh()], 200);
     }
 
     /**
      * DELETE /projects/{project}/readings/{reading}
      *
      * Engineering Rule #10: "Never hard-delete readings — preserve survey history permanently"
-     * (engineering-rules.md baris 10)
+     * Delete hanya diizinkan jika status proyek 'draft' atau 'calculated',
+     * dan hanya untuk reading terakhir (sequence_no tertinggi).
      *
-     * Karena schema readings belum punya deleted_at (soft delete),
-     * delete HANYA diizinkan jika:
-     *   - Status proyek masih 'draft' atau 'calculated'
-     *   - Reading adalah entri TERAKHIR (sequence_no tertinggi)
-     *
-     * Alasan pembatasan ke reading terakhir: menghapus di tengah akan
-     * membuat sequence_no berlubang — melanggar "never skip or reuse".
-     * Observer akan otomatis dispatch RecalculateSurveyJob setelah deleted.
+     * PERUBAHAN: Ganti return type dari RedirectResponse → JsonResponse.
+     * - Sukses: 204 No Content
+     * - Gagal validasi bisnis: 422 dengan pesan error
      */
-    public function destroy(Request $request, Project $project, Reading $reading): RedirectResponse
+    public function destroy(Request $request, Project $project, Reading $reading): JsonResponse
     {
         $this->authorize('update', $project);
 
-        // Pastikan reading memang milik project ini
         abort_if($reading->project_id !== $project->id, 404);
 
-        // Hanya boleh dihapus saat status draft atau calculated
         if (! in_array($project->status, ['draft', 'calculated'], true)) {
-            return back()->with('flash', [
-                'type'    => 'error',
+            return response()->json([
                 'message' => 'Bacaan hanya dapat dihapus pada proyek berstatus draft atau calculated.',
-            ]);
+            ], 422);
         }
 
-        // Hanya boleh hapus reading terakhir — menjaga integritas sequence_no
         $lastSeq = $project->readings()->max('sequence_no');
         if ($reading->sequence_no !== $lastSeq) {
-            return back()->with('flash', [
-                'type'    => 'error',
-                'message' => 'Hanya bacaan terakhir (sequence tertinggi) yang dapat dihapus untuk menjaga urutan data.',
-            ]);
+            return response()->json([
+                'message' => 'Hanya bacaan terakhir yang dapat dihapus.',
+            ], 422);
         }
 
         $reading->delete();
 
-        return back()->with('flash', [
-            'type'    => 'success',
-            'message' => 'Bacaan dihapus. Perhitungan ulang dijadwalkan.',
-        ]);
+        return response()->json(null, 204);
     }
 }

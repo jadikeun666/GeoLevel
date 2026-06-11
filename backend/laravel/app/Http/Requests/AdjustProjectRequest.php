@@ -17,7 +17,7 @@ class AdjustProjectRequest extends FormRequest
         $methods = implode(',', config('geolevel.adjustment_methods'));
 
         return [
-            'method' => ['required', "in:{$methods}"],
+            'method' => ['required', 'string', 'in:equal,bowditch,least_squares,reset'],
         ];
     }
 

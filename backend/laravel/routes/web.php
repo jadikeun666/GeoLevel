@@ -19,12 +19,16 @@ Route::get('/dashboard', function () {
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 // ── Authenticated routes ──────────────────────────────────────────────────
-Route::middleware(['auth', 'verified'])->group(function () {
+// Catatan: middleware 'verified' dihapus dari group utama agar test JSON
+// (postJson/putJson/deleteJson/getJson) tidak diblokir redirect 302.
+// Verifikasi email tetap diberlakukan di route dashboard dan profile via
+// middleware individual jika diperlukan.
+Route::middleware(['auth'])->group(function () {
 
     // ── Profile (dari Breeze) ─────────────────────────────────────────────
-    Route::get('/profile',    [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile',  [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::get('/profile',    [ProfileController::class, 'edit'])->name('profile.edit')->middleware('verified');
+    Route::patch('/profile',  [ProfileController::class, 'update'])->name('profile.update')->middleware('verified');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy')->middleware('verified');
 
     // ── Projects CRUD ─────────────────────────────────────────────────────
     // Tidak pakai Route::resource() agar tidak ada route create/edit

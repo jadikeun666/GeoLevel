@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ComputedElevation extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'project_id',
         'reading_id',
@@ -23,7 +25,7 @@ class ComputedElevation extends Model
         'hi'                  => 'decimal:4',
         'raw_elevation'       => 'decimal:4',
         'correction'          => 'decimal:6',
-        'adjusted_elevation'  => 'decimal:4',
+        'adjusted_elevation'  => 'decimal:6',
         'cumulative_distance' => 'decimal:3',
     ];
 

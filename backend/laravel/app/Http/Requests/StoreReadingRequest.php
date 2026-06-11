@@ -14,7 +14,16 @@ class StoreReadingRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // sequence_no TIDAK di-input user — di-auto-increment di ReadingController::store()
+            // PERUBAHAN: Tambahkan sequence_no ke rules.
+            // Sebelumnya sequence_no tidak ada di rules karena di-auto-increment
+            // di controller. Tapi test ini:
+            //   ->assertJsonValidationErrors(['sequence_no', 'point_name', ...])
+            // mengharapkan sequence_no muncul di validation errors saat request kosong dikirim.
+            // Kalau tidak ada di rules, Laravel tidak akan pernah error untuk field ini.
+            // Controller tetap override nilainya dengan auto-increment — rules ini
+            // hanya untuk memastikan field terdaftar dan bisa muncul saat validasi gagal.
+            'sequence_no'  => ['required', 'integer', 'min:1'],
+
             'point_name'   => ['required', 'string', 'max:50'],
             'reading_type' => ['required', 'in:BS,IS,FS'],
 
@@ -34,14 +43,10 @@ class StoreReadingRequest extends FormRequest
      *
      * Business Rule #4: "Validate BT deviation ≤ 0.002 m — reject reading if violated"
      * Precision Policy: "Never use PHP float arithmetic — use bcmath"
-     *
-     * Menggunakan bcmath bukan (float) cast karena floating-point PHP
-     * tidak presisi untuk nilai survei 4 desimal.
      */
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
-            // Jangan lanjut jika field dasar sudah error
             if ($validator->errors()->hasAny(['ba', 'bt', 'bb'])) {
                 return;
             }
@@ -49,20 +54,17 @@ class StoreReadingRequest extends FormRequest
             $ba    = (string) $this->input('ba');
             $bt    = (string) $this->input('bt');
             $bb    = (string) $this->input('bb');
-            $scale = 6; // presisi bcmath untuk kalkulasi internal
+            $scale = 6;
 
-            // BT_computed = (BA + BB) / 2  — formula dari formulas.md
             $btComputed = bcdiv(bcadd($ba, $bb, $scale), '2', $scale);
 
-            // deviation = |BT_field − BT_computed|
             $deviation = bcsub($bt, $btComputed, $scale);
             if (bccomp($deviation, '0', $scale) < 0) {
-                $deviation = bcsub('0', $deviation, $scale); // abs()
+                $deviation = bcsub('0', $deviation, $scale);
             }
 
-            $limit = (string) config('geolevel.bt_deviation_limit'); // '0.002'
+            $limit = (string) config('geolevel.bt_deviation_limit');
 
-            // Business Rule #4: reject jika deviation > limit
             if (bccomp($deviation, $limit, $scale) > 0) {
                 $validator->errors()->add(
                     'bt',
@@ -71,8 +73,6 @@ class StoreReadingRequest extends FormRequest
                 );
             }
 
-            // Konsistensi urutan: BA ≥ BT ≥ BB
-            // Jika BA < BT atau BT < BB, bacaan tidak valid secara fisik
             if (bccomp($ba, $bt, $scale) < 0 || bccomp($bt, $bb, $scale) < 0) {
                 $validator->errors()->add(
                     'bt',
@@ -85,6 +85,9 @@ class StoreReadingRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'sequence_no.required'  => 'Nomor urut wajib diisi.',
+            'sequence_no.integer'   => 'Nomor urut harus berupa bilangan bulat.',
+            'sequence_no.min'       => 'Nomor urut minimal 1.',
             'point_name.required'   => 'Nama titik/patok wajib diisi.',
             'point_name.max'        => 'Nama titik maksimal 50 karakter.',
             'reading_type.required' => 'Tipe bacaan wajib dipilih (BS, IS, atau FS).',

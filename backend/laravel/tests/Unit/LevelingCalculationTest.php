@@ -7,7 +7,7 @@ use App\Services\LevelingCalculationService;
 use App\Services\ClosureCheckerService;
 use App\Services\AdjustmentService;
 
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
@@ -18,8 +18,7 @@ use Tests\TestCase;
  */
 class LevelingCalculationTest extends TestCase
 {
-    use IlluminateFoundationTestingDatabaseTransactions;
-    use DatabaseTransactions;
+    use RefreshDatabase;
 
     // ── Fixtures (dari formulas.md) ──────────────────────────────────────────
 
@@ -64,8 +63,6 @@ class LevelingCalculationTest extends TestCase
 
         $service = app(LevelingCalculationService::class);
         $service->recalculate($project->fresh(), $user->id);
-        // Prevent queued jobs from firing during adjustment tests
-        \Illuminate\Support\Facades\Queue::fake();
 
         return [
             'project'    => $project->fresh(),
@@ -366,27 +363,4 @@ class LevelingCalculationTest extends TestCase
             'Optical distance for seq-1 must be 62.60 m');
     }
 
-    #[Test]
-    public function debug_adjustment_persistence(): void
-    {
-        ['project' => $project] = $this->seedAndCalculate();
-
-        $before = \App\Models\ComputedElevation::where('project_id', $project->id)
-            ->where('sequence_no', 2)->first();
-        echo "\nBEFORE adjust - correction: {$before->correction}\n";
-
-        $adjService = app(AdjustmentService::class);
-        $adjService->applyToProject($project, 'equal', 1);
-
-        $raw = \Illuminate\Support\Facades\DB::table('computed_elevations')
-            ->where('project_id', $project->id)
-            ->where('sequence_no', 2)->first();
-        echo "AFTER adjust (raw DB) - correction: {$raw->correction}\n";
-
-        $eloquent = \App\Models\ComputedElevation::where('project_id', $project->id)
-            ->where('sequence_no', 2)->first();
-        echo "AFTER adjust (Eloquent) - correction: {$eloquent->correction}\n";
-
-        $this->assertTrue(true);
-    }
 }

@@ -32,23 +32,33 @@ raw field readings → corrected elevations → charts → PDF field book.
 - Laravel Breeze authentication
 - PostgreSQL database connection
 - Migrations: `projects`, `readings`, `computed_elevations`, `cross_sections`, `activity_logs`
-- Basic route definitions
+- Migration: soft deletes on `readings`
+- Migration: adjusted precision on `computed_elevations`
+- Basic route definitions (all API routes registered)
+- `LevelingCalculationService` — full calculation pipeline with bcmath
+- `ReadingObserver` — dispatches `RecalculateSurveyJob` on saved/updated/deleted
+- `RecalculateSurveyJob` — queued, with `failed()` handler
+- `ProjectController` — full CRUD + adjust + adjust-reset + calculate
+- `ReadingController` — full CRUD
+- `AdjustmentService` — equal, bowditch, reversible
+- All Events: `SurveyRecalculated`, `ClosureChecked`, `AdjustmentApplied`, `ExportGenerated`
+- All Listeners: `RunClosureCheck`, `LogClosureResult`, `LogAdjustmentApplied`, `LogExportGenerated`
+- `ExportService`, `GeneratePdfExportJob`, `GenerateExcelExportJob`, `GenerateCsvExportJob`
+- `ExportController`, `ChartController`
+- Form Requests: `StoreReadingRequest`, `UpdateReadingRequest`, `StoreProjectRequest`, `UpdateProjectRequest`, `AdjustProjectRequest`
+- Policies: `ProjectPolicy`
 
-###  ✅ In Progress
-- `LevelingCalculationService`
-- `ReadingObserver`
-- `ProjectController` CRUD
-- `ReadingController` CRUD
+### 🔄 In Progress
+- `ClosureCheckerService` — wired via event but needs end-to-end verification
+- `ExportController` — status-guard returning 422 instead of 403 (bug)
+- `GeneratePdfExportJob` — `Barryvdh\DomPDF\Facade\Pdf` not found (package missing or not registered)
 
-### ✅ Not Started
-- `ClosureCheckerService`
-- `AdjustmentService`
+### ⏳ Not Started
 - `VisualizationService`
-- `ExportService`
-- All Jobs, Events
 - Vue frontend pages and components
-- PDF / Excel / CSV export
+- PDF / Excel / CSV export (PDF blocked by DomPDF issue)
 - Chart visualization
+- `ElevationTable.vue` component
 
 ---
 
@@ -93,20 +103,21 @@ raw field readings → corrected elevations → charts → PDF field book.
 
 Read the relevant doc before implementing any feature:
 
-| File                    | Read when working on...                        |
-| ----------------------- | ---------------------------------------------- |
-| `docs/formulas.md`      | Any calculation, formula, or validation logic  |
-| `docs/database.md`      | Migrations, models, queries, schema            |
-| `docs/architecture.md`  | Services, observers, jobs, events, queues      |
-| `docs/exports.md`       | PDF, Excel, CSV generation                     |
-| `docs/engineering-rules.md` | Precision policy, business rules, testing  |
+| File                        | Read when working on...                       |
+| --------------------------- | --------------------------------------------- |
+| `docs/formulas.md`          | Any calculation, formula, or validation logic |
+| `docs/database.md`          | Migrations, models, queries, schema           |
+| `docs/architecture.md`      | Services, observers, jobs, events, queues     |
+| `docs/exports.md`           | PDF, Excel, CSV generation                    |
+| `docs/engineering-rules.md` | Precision policy, business rules, testing     |
 
 ---
 
 ## Immediate Next Tasks
 
-1. Complete `LevelingCalculationService` — implement core formulas from `docs/formulas.md`
-2. Wire `ReadingObserver` to trigger recalculation on save/update/delete
-3. Complete `ProjectController` and `ReadingController` CRUD
-4. Implement `ClosureCheckerService`
-5. Build `ElevationTable.vue` component
+1. Fix `ExportController` status guard — returning 422 instead of 403 for non-accepted projects
+2. Fix DomPDF — install/register `barryvdh/laravel-dompdf` so `GeneratePdfExportJob` works
+3. Fix `ProjectWorkflowTest` — Inertia view `[app]` not found; stub or bypass Inertia in tests
+4. Verify `ClosureCheckerService` end-to-end via `SurveyRecalculated` event
+5. Implement `VisualizationService` — long section + cross section chart data
+6. Build Vue frontend: `ElevationTable.vue`, `LongSectionChart.vue`, `ClosureStatusBadge.vue`

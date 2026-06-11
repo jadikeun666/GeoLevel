@@ -34,6 +34,17 @@ return [
     'default_adjustment_method' => 'equal',
 
     /*
+     * PERUBAHAN: Tambah 'reset' ke daftar method yang valid.
+     * AdjustProjectRequest mengambil daftar ini via config('geolevel.adjustment_methods')
+     * untuk validasi rule 'in:...'. Tanpa 'reset' di sini, test yang mengirim
+     * method='reset' akan kena 422 karena dianggap method tidak valid.
+     *
+     * 'reset' bukan metode perataan matematis — fungsinya mengembalikan semua
+     * correction ke 0 dan adjusted_elevation ke raw_elevation.
+     */
+    'adjustment_methods' => ['equal', 'bowditch', 'least_squares', 'reset'],
+
+    /*
     |--------------------------------------------------------------------------
     | Precision Policy
     | Sesuai database.md — gunakan bcmath untuk semua kalkulasi elevasi

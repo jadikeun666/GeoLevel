@@ -22,24 +22,29 @@ class RecalculateSurveyJob implements ShouldQueue
 
     public function __construct(
         public readonly int $projectId,
-        public readonly int $userId,
     ) {}
 
-    public function handle(LevelingCalculationService $service): void
+    public function handle(): void
     {
         $project = Project::findOrFail($this->projectId);
-        $service->recalculate($project, $this->userId);
+        app(LevelingCalculationService::class)->recalculate($project);
     }
 
     public function failed(Throwable $e): void
     {
         Log::error("RecalculateSurveyJob failed for project {$this->projectId}: {$e->getMessage()}");
 
-        Project::where('id', $this->projectId)->update(['status' => 'draft']);
+        $project = Project::find($this->projectId);
+
+        if (! $project) {
+            return;
+        }
+
+        $project->update(['status' => 'draft']);
 
         ActivityLog::create([
             'project_id'    => $this->projectId,
-            'user_id'       => $this->userId,
+            'user_id'       => $project->user_id,
             'activity_type' => ActivityLog::TYPE_JOB_FAILED,
             'description'   => "Recalculation job failed: {$e->getMessage()}",
             'metadata'      => ['exception' => get_class($e)],

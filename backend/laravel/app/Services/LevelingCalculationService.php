@@ -16,9 +16,15 @@ class LevelingCalculationService
     // Public entry point
     // -----------------------------------------------------------------------
 
-    public function recalculate(Project $project, int $userId): void
+    /**
+     * PERUBAHAN: Hapus parameter int $userId dari signature method ini.
+     * Job (RecalculateSurveyJob) tidak punya userId lagi sejak constructor-nya
+     * disederhanakan — jadi tidak bisa pass userId dari sana.
+     * Solusi: ambil userId dari $project->user_id langsung.
+     */
+    public function recalculate(Project $project): void
     {
-        DB::transaction(function () use ($project, $userId) {
+        DB::transaction(function () use ($project) {
             $project->load([
                 'readings' => fn ($q) => $q->orderBy('sequence_no'),
             ]);
@@ -31,7 +37,6 @@ class LevelingCalculationService
             $computed = $this->calculateElevations($project);
             $closure  = $this->calculateClosure($project, $computed);
 
-            // FIX 1: Only apply adjustment if survey is accepted
             $adjusted = $closure['status'] === 'accepted'
                         ? $this->applyAdjustment($project, $computed, $closure)
                         : $this->initCorrections($computed);
@@ -40,7 +45,7 @@ class LevelingCalculationService
 
             $this->logActivity(
                 $project,
-                $userId,
+                $project->user_id,   // PERUBAHAN: pakai project->user_id, bukan parameter
                 ActivityLog::TYPE_SURVEY_RECALCULATED,
                 [
                     'closure_error'     => $closure['fh'],
@@ -51,7 +56,7 @@ class LevelingCalculationService
         });
 
         // Dispatch di luar transaction agar hanya terpanggil bila commit berhasil
-        SurveyRecalculated::dispatch($project->id, $userId);
+        SurveyRecalculated::dispatch($project->id, $project->user_id);
     }
 
     // -----------------------------------------------------------------------
@@ -66,6 +71,7 @@ class LevelingCalculationService
         );
         $currentHI          = '0';
         $cumulativeDistance = '0';
+
         foreach ($project->readings as $reading) {
             $bt       = (string) $reading->bt;
             $distance = $reading->effectiveDistance();
@@ -73,7 +79,6 @@ class LevelingCalculationService
             $cumulativeDistance = bcadd($cumulativeDistance, $distance, self::SCALE);
 
             if ($reading->isBacksight()) {
-                // HI = Elevasi titik sebelumnya + BS
                 $currentHI = bcadd($currentElevation, $bt, self::SCALE);
 
                 $results[] = [
@@ -86,7 +91,6 @@ class LevelingCalculationService
                     'cumulative_distance' => $cumulativeDistance,
                 ];
             } elseif ($reading->isForesight() || $reading->isIntermediate()) {
-                // Elevasi = HI − FS/IS
                 $elevation        = bcsub($currentHI, $bt, self::SCALE);
                 $currentElevation = $elevation;
 
@@ -130,7 +134,6 @@ class LevelingCalculationService
             $totalDistanceM = bcadd($totalDistanceM, $distance, self::SCALE);
         }
 
-        // fh = |ΣBS − ΣFS| — simpan sebagai absolut untuk perbandingan toleransi
         $fhSigned = bcsub($sumBS, $sumFS, self::SCALE);
         $fh       = bccomp($fhSigned, '0', self::SCALE) < 0
                     ? bcsub('0', $fhSigned, self::SCALE)
@@ -145,7 +148,7 @@ class LevelingCalculationService
 
         return [
             'fh'                => $fh,
-            'fh_signed'         => $fhSigned,   // dibutuhkan applyAdjustment untuk arah koreksi
+            'fh_signed'         => $fhSigned,
             'sum_bs'            => $sumBS,
             'sum_fs'            => $sumFS,
             'total_distance_m'  => $totalDistanceM,
@@ -165,19 +168,16 @@ class LevelingCalculationService
         $method = $project->adjustment_method
                   ?? config('geolevel.default_adjustment_method');
 
-        $fh    = $closure['fh'];           // nilai absolut
+        $fh     = $closure['fh'];
         $totalD = $closure['total_distance_m'];
-        $nFS   = $closure['n_fs'];
+        $nFS    = $closure['n_fs'];
 
-        // Arah koreksi: ΣBS > ΣFS → fh_signed positif → koreksi harus negatif
         $negative = bccomp($closure['fh_signed'], '0', self::SCALE) >= 0;
 
-        // unit = fh / n  (hanya dibagi jumlah FS, bukan IS+FS)
         $unitCorrection = $nFS > 0
                           ? bcdiv($fh, (string) $nFS, self::SCALE)
                           : '0';
 
-        // FIX: fsCounter hanya naik saat membaca baris FS, bukan IS
         $fsCounter = 0;
 
         foreach ($computed as &$row) {
@@ -187,8 +187,6 @@ class LevelingCalculationService
                 continue;
             }
 
-            // IS juga mendapat koreksi berdasarkan fsCounter terakhir (interpolasi posisi)
-            // FS yang menaikkan counter terlebih dahulu
             if ($row['reading_type'] === 'FS') {
                 $fsCounter++;
             }
@@ -223,7 +221,6 @@ class LevelingCalculationService
         bool $negative,
         int $index
     ): string {
-        // correction_i = −(unit × index)  → koreksi kumulatif per posisi FS
         $corr = bcmul($unit, (string) $index, self::SCALE);
         return $negative ? bcsub('0', $corr, self::SCALE) : $corr;
     }
@@ -241,10 +238,6 @@ class LevelingCalculationService
         $corr  = bcmul($fh, $ratio, self::SCALE);
         return $negative ? bcsub('0', $corr, self::SCALE) : $corr;
     }
-
-    // -----------------------------------------------------------------------
-    // FIX 1 (helper) — init corrections to zero when status != accepted
-    // -----------------------------------------------------------------------
 
     private function initCorrections(array $computed): array
     {
@@ -330,7 +323,6 @@ class LevelingCalculationService
             return '0';
         }
 
-        // Seed awal dengan sqrt float, lalu iterasi Newton-Raphson
         $x = number_format(sqrt((float) $n), $scale, '.', '');
 
         for ($i = 0; $i < 20; $i++) {
@@ -394,17 +386,10 @@ class LevelingCalculationService
         return bcadd($elevation, $bs, self::SCALE);
     }
 
-    // FIX 2: Round to 4 decimal places (was returning 10 decimals raw from bcsub)
     public static function computeElevation(string $hi, string $reading): string
     {
         return number_format((float) bcsub($hi, $reading, self::SCALE), 4, '.', '');
     }
-
-    // -----------------------------------------------------------------------
-    // FIX 3: Static alternative — calculateElevationsFromArray(array, string)
-    // Renamed to avoid PHP redeclaration conflict (no method overloading in PHP).
-    // Testable in isolation without a Project model instance.
-    // -----------------------------------------------------------------------
 
     public static function calculateElevationsStatic(array $readings, string $benchmarkElevation): array
     {

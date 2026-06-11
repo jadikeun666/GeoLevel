@@ -33,7 +33,8 @@ class ReadingControllerTest extends TestCase
         parent::setUp();
         Queue::fake();
 
-        $this->user    = User::factory()->create();
+        // email_verified_at diperlukan agar middleware 'verified' tidak memblokir request
+        $this->user    = User::factory()->create(['email_verified_at' => now()]);
         $this->project = Project::factory()->for($this->user)->create([
             'benchmark_elevation' => '100.0000',
             'tolerance_class'     => 'LA',
@@ -224,6 +225,7 @@ class ReadingControllerTest extends TestCase
         Reading::factory()->for($this->project)->create($this->validFsPayload(2, 'TP-1'));
         Reading::factory()->for($this->project)->create($this->validBsPayload(1, 'BM-A'));
 
+        // Kirim Accept: application/json agar ProjectController::show return JSON, bukan Inertia
         $response = $this->actingAs($this->user)
                          ->getJson("/projects/{$this->project->id}")
                          ->assertStatus(200);
@@ -246,7 +248,8 @@ class ReadingControllerTest extends TestCase
     #[Test]
     public function user_cannot_access_readings_of_another_users_project(): void
     {
-        $other = User::factory()->create();
+        // User lain juga perlu email verified agar middleware tidak redirect 302
+        $other = User::factory()->create(['email_verified_at' => now()]);
 
         $this->actingAs($other)
              ->getJson("/projects/{$this->project->id}")
