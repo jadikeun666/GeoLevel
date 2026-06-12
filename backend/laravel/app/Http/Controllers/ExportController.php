@@ -41,11 +41,27 @@ class ExportController extends Controller
     private function dispatch(\Closure $fn): JsonResponse
     {
         try {
-            $fn();
+            $result = $fn();
+
+            // CSV job returns a URL for immediate download
+            if (is_array($result) && isset($result['url'])) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Export generated.',
+                    'data'    => ['url' => $result['url']],
+                ]);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Export queued. You will be notified when ready.',
             ]);
+        } catch (\App\Exceptions\ExportNotAllowedException $e) {
+            // Business rule: export only allowed when status = accepted
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 403);
         } catch (\RuntimeException $e) {
             return response()->json([
                 'success' => false,

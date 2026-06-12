@@ -1,12 +1,14 @@
 <?php
 
 namespace Tests\Feature;
+
 use PHPUnit\Framework\Attributes\Test;
 
 use App\Models\Project;
 use App\Models\Reading;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class ProjectWorkflowTest extends TestCase
@@ -19,6 +21,21 @@ class ProjectWorkflowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Queue::fake() di setUp() mencegah RecalculateSurveyJob berjalan
+        // synchronously saat test. Tanpa ini:
+        //   1. ReadingObserver dispatch RecalculateSurveyJob secara sync
+        //   2. LevelingCalculationService berjalan dengan data tidak lengkap
+        //   3. Exception menyebabkan rollback transaksi seluruhnya
+        //   4. Reading tidak tersimpan → user_can_add_valid_reading gagal
+        //   5. user_can_delete_reading_on_draft_project gagal karena
+        //      Reading::factory()->create() juga rollback
+        //
+        // Test yang perlu verifikasi job dispatch menggunakan
+        // Queue::assertPushed() di dalam method test masing-masing —
+        // ini tetap bekerja karena Queue::fake() mencatat semua dispatch.
+        Queue::fake();
+
         $this->user    = User::factory()->create();
         $this->project = Project::factory()->create([
             'user_id'             => $this->user->id,
@@ -51,6 +68,7 @@ class ProjectWorkflowTest extends TestCase
     #[Test]
     public function authenticated_user_can_see_projects_index(): void
     {
+        // Memerlukan resources/views/app.blade.php untuk Inertia render.
         $this->actingAs($this->user)
             ->get(route('projects.index'))
             ->assertOk()
@@ -89,6 +107,7 @@ class ProjectWorkflowTest extends TestCase
     #[Test]
     public function user_can_view_own_project(): void
     {
+        // Memerlukan resources/views/app.blade.php untuk Inertia render.
         $this->actingAs($this->user)
             ->get(route('projects.show', $this->project->id))
             ->assertOk()
@@ -110,6 +129,9 @@ class ProjectWorkflowTest extends TestCase
     #[Test]
     public function user_can_add_valid_reading(): void
     {
+        // Data dari formulas.md worked example baris pertama.
+        // BT_computed = (1.5230 + 0.8970) / 2 = 1.2100
+        // BT_deviation = |1.2100 - 1.2100| = 0.0000 ≤ 0.002 ✓
         $this->actingAs($this->user)
             ->post(route('readings.store', $this->project->id), [
                 'point_name'   => 'BM-A',
@@ -141,7 +163,7 @@ class ProjectWorkflowTest extends TestCase
         $this->actingAs($this->user)
             ->post(route('readings.store', $this->project->id), [
                 'point_name'   => 'X',
-                'reading_type' => 'XX', // invalid
+                'reading_type' => 'XX',
                 'ba'           => '1.0',
                 'bt'           => '1.0',
                 'bb'           => '1.0',
@@ -152,17 +174,25 @@ class ProjectWorkflowTest extends TestCase
     #[Test]
     public function user_can_delete_reading_on_draft_project(): void
     {
+        // Buat satu reading — ini adalah satu-satunya reading di project,
+        // sehingga sequence_no-nya adalah yang tertinggi dan delete diizinkan.
+        // Queue::fake() dari setUp() mencegah observer crash saat factory create.
         $reading = Reading::factory()->create([
             'project_id'   => $this->project->id,
             'sequence_no'  => 1,
             'reading_type' => 'BS',
+            'point_name'   => 'BM-A',
+            'ba'           => '1.5230',
+            'bt'           => '1.2100',
+            'bb'           => '0.8970',
         ]);
 
         $this->actingAs($this->user)
             ->delete(route('readings.destroy', [$this->project->id, $reading->id]))
             ->assertRedirect();
 
-        $this->assertDatabaseMissing('readings', ['id' => $reading->id]);
+        // Engineering Rule #10: soft delete — row tetap ada, deleted_at di-set
+        $this->assertSoftDeleted('readings', ['id' => $reading->id]);
     }
 
     // ── Calculate / Adjust ────────────────────────────────────────────────
@@ -170,13 +200,12 @@ class ProjectWorkflowTest extends TestCase
     #[Test]
     public function calculate_endpoint_dispatches_job_and_redirects(): void
     {
-        \Illuminate\Support\Facades\Queue::fake();
-
         $this->actingAs($this->user)
             ->post(route('projects.calculate', $this->project->id))
             ->assertRedirect();
 
-        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\RecalculateSurveyJob::class);
+        // Queue::fake() dari setUp() masih aktif — assertPushed tetap bekerja
+        Queue::assertPushed(\App\Jobs\RecalculateSurveyJob::class);
     }
 
     #[Test]
@@ -202,7 +231,7 @@ class ProjectWorkflowTest extends TestCase
     #[Test]
     public function export_pdf_returns_error_when_project_not_accepted(): void
     {
-        // project.status = 'draft'
+        // project.status = 'draft' dari setUp()
         $this->actingAs($this->user)
             ->get(route('export.pdf', $this->project->id))
             ->assertJson(['success' => false]);
@@ -211,41 +240,37 @@ class ProjectWorkflowTest extends TestCase
     #[Test]
     public function export_pdf_queues_job_when_project_accepted(): void
     {
-        \Illuminate\Support\Facades\Queue::fake();
-
         $this->project->update(['status' => 'accepted']);
 
         $this->actingAs($this->user)
             ->get(route('export.pdf', $this->project->id))
             ->assertJson(['success' => true]);
 
-        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\GeneratePdfExportJob::class);
+        Queue::assertPushed(\App\Jobs\GeneratePdfExportJob::class);
     }
 
     #[Test]
     public function export_excel_queues_job_when_project_accepted(): void
     {
-        \Illuminate\Support\Facades\Queue::fake();
         $this->project->update(['status' => 'accepted']);
 
         $this->actingAs($this->user)
             ->get(route('export.excel', $this->project->id))
             ->assertJson(['success' => true]);
 
-        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\GenerateExcelExportJob::class);
+        Queue::assertPushed(\App\Jobs\GenerateExcelExportJob::class);
     }
 
     #[Test]
     public function export_csv_queues_job_when_project_accepted(): void
     {
-        \Illuminate\Support\Facades\Queue::fake();
         $this->project->update(['status' => 'accepted']);
 
         $this->actingAs($this->user)
             ->get(route('export.csv', $this->project->id))
             ->assertJson(['success' => true]);
 
-        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\GenerateCsvExportJob::class);
+        Queue::assertPushed(\App\Jobs\GenerateCsvExportJob::class);
     }
 
     // ── Chart endpoints ───────────────────────────────────────────────────

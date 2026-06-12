@@ -11,6 +11,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 class GenerateCsvExportJob implements ShouldQueue
@@ -27,26 +28,23 @@ class GenerateCsvExportJob implements ShouldQueue
 
     public function handle(): void
     {
-        $project = Project::findOrFail($this->projectId);
-
-        $dir = ExportService::exportDir($this->projectId);
-        if (! is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
+        $project  = Project::findOrFail($this->projectId);
+        $disk     = config('geolevel.export_disk', 'local');
         $filename = "survey_{$this->projectId}_" . now()->format('YmdHis') . '.csv';
-        $path     = "{$dir}/{$filename}";
+        $storagePath = config('geolevel.export_path', 'exports') . "/{$this->projectId}/{$filename}";
 
         $rows = $project->computedElevations()
             ->orderBy('sequence_no')
             ->get(['sequence_no', 'point_name', 'cumulative_distance', 'adjusted_elevation', 'correction']);
 
-        $handle = fopen($path, 'w');
-
-        // No header row — AutoCAD Civil 3D / GIS import by column position
-        // Column order: sequence_no, point_name, cumulative_distance, adjusted_elevation, correction
+        // Build CSV content in-memory, then write via Storage facade.
+        // Ini memungkinkan Storage::fake() di test untuk menangkap file.
+        // Column order (no header): sequence_no, point_name, cumulative_distance,
+        //                           adjusted_elevation, correction
+        // — downstream AutoCAD Civil 3D / GIS import by column position.
+        $lines = [];
         foreach ($rows as $row) {
-            fputcsv($handle, [
+            $lines[] = implode(',', [
                 $row->sequence_no,
                 $row->point_name,
                 number_format((float) $row->cumulative_distance, 3, '.', ''),
@@ -55,7 +53,7 @@ class GenerateCsvExportJob implements ShouldQueue
             ]);
         }
 
-        fclose($handle);
+        Storage::disk($disk)->put($storagePath, implode("\n", $lines));
 
         ActivityLog::create([
             'project_id'    => $this->projectId,
@@ -65,14 +63,21 @@ class GenerateCsvExportJob implements ShouldQueue
             'metadata'      => ['file' => $filename, 'type' => 'csv'],
         ]);
 
-        ExportGenerated::dispatch($this->projectId, $this->userId, 'csv', $path);
+        ExportGenerated::dispatch($this->projectId, $this->userId, 'csv', $storagePath);
     }
 
     public function failed(Throwable $e): void
     {
-        $dir = ExportService::exportDir($this->projectId);
-        foreach (glob("{$dir}/survey_{$this->projectId}_*.csv") as $file) {
-            @unlink($file);
+        $disk        = config('geolevel.export_disk', 'local');
+        $exportPath  = config('geolevel.export_path', 'exports') . "/{$this->projectId}";
+
+        // Hapus semua file CSV partial untuk project ini
+        $files = Storage::disk($disk)->files($exportPath);
+        foreach ($files as $file) {
+            if (str_starts_with(basename($file), "survey_{$this->projectId}_")
+                && str_ends_with($file, '.csv')) {
+                Storage::disk($disk)->delete($file);
+            }
         }
 
         ActivityLog::create([

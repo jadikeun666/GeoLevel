@@ -3,16 +3,16 @@
 namespace App\Jobs;
 
 use App\Events\ExportGenerated;
+use App\Exports\SurveyExport;
 use App\Models\ActivityLog;
 use App\Models\Project;
-use App\Services\ExportService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
-use App\Exports\SurveyExport;
 use Throwable;
 
 class GenerateExcelExportJob implements ShouldQueue
@@ -31,15 +31,14 @@ class GenerateExcelExportJob implements ShouldQueue
     {
         $project = Project::with(['readings', 'computedElevations'])->findOrFail($this->projectId);
 
-        $dir = ExportService::exportDir($this->projectId);
-        if (! is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
+        $filename    = "survey_{$this->projectId}_" . now()->format('YmdHis') . '.xlsx';
+        $storagePath = "exports/{$this->projectId}/{$filename}";
 
-        $filename = "survey_{$this->projectId}_" . now()->format('YmdHis') . '.xlsx';
-        $path     = "{$dir}/{$filename}";
-
-        Excel::store(new SurveyExport($project), $path, 'local_absolute');
+        // Write via the Laravel 'local' disk so behaviour is identical
+        // whether it's the real filesystem (production) or
+        // Storage::fake('local') (tests). Maatwebsite\Excel resolves the
+        // given disk name through the Storage facade internally.
+        Excel::store(new SurveyExport($project), $storagePath, 'local');
 
         ActivityLog::create([
             'project_id'    => $this->projectId,
@@ -49,14 +48,19 @@ class GenerateExcelExportJob implements ShouldQueue
             'metadata'      => ['file' => $filename, 'type' => 'excel'],
         ]);
 
-        ExportGenerated::dispatch($this->projectId, $this->userId, 'excel', $path);
+        ExportGenerated::dispatch($this->projectId, $this->userId, 'excel', $storagePath);
     }
 
     public function failed(Throwable $e): void
     {
-        $dir = ExportService::exportDir($this->projectId);
-        foreach (glob("{$dir}/survey_{$this->projectId}_*.xlsx") as $file) {
-            @unlink($file);
+        // Delete any partial export files for this project (Business Rule:
+        // export job failure → delete partial file, log to activity_logs).
+        $disk = Storage::disk('local');
+
+        foreach ($disk->files("exports/{$this->projectId}") as $file) {
+            if (str_starts_with(basename($file), "survey_{$this->projectId}_")) {
+                $disk->delete($file);
+            }
         }
 
         ActivityLog::create([

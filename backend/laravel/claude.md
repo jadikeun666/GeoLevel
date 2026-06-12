@@ -47,18 +47,51 @@ raw field readings → corrected elevations → charts → PDF field book.
 - `ExportController`, `ChartController`
 - Form Requests: `StoreReadingRequest`, `UpdateReadingRequest`, `StoreProjectRequest`, `UpdateProjectRequest`, `AdjustProjectRequest`
 - Policies: `ProjectPolicy`
+- `ExportController` — status-guard now returns 403 via `ExportNotAllowedException`
+- `barryvdh/laravel-dompdf` installed and wired into `GeneratePdfExportJob`
+- `GeneratePdfExportJob` — renders via DomPDF (`->output()`), writes through
+  `Storage::disk('local')` (Storage::fake()-safe for tests)
+- `ExportGenerated` event — carries `projectId`, `userId`, `format`, `filePath`
+  (fixes `LogExportGenerated` undefined-property error)
+- `resources/views/app.blade.php` — Inertia root template created
+- `config/inertia.php` published, `pages.paths` corrected to `resources/js/Pages`
+  (was defaulting to lowercase `js/pages`, breaking `assertInertia()->component()`)
+- `ProjectWorkflowTest` — all 20 tests pass (Inertia render + auth + CRUD + calculate/adjust/export/chart)
+- `ExportControllerTest` — all tests pass, including
+  `export_file_stored_under_project_exports_directory`
+- `ClosureCheckerService` — covered by full suite, all assertions pass (91/91)
+- `app/Exceptions/ExportNotAllowedException.php`
+- Excel export sheets split into PSR-4-compliant files:
+  `ElevasiSheet.php`, `KoreksiSheet.php`, `RingkasanSheet.php`
+- `resources/views/exports/field_book.blade.php` exists
+- Vue page stubs exist: `Pages/Projects/Index.vue`, `Pages/Projects/Show.vue`,
+  `Pages/Projects/ElevationTable.vue`, `Pages/Projects/ClosureStatusBadge.vue`,
+  `Pages/Projects/LongSectionChart.vue`, `Pages/Projects/CrossSectionChart.vue`
+
+**Full test suite: `OK (91 tests, 230 assertions)`**
 
 ### 🔄 In Progress
-- `ClosureCheckerService` — wired via event but needs end-to-end verification
-- `ExportController` — status-guard returning 422 instead of 403 (bug)
-- `GeneratePdfExportJob` — `Barryvdh\DomPDF\Facade\Pdf` not found (package missing or not registered)
+- `GenerateExcelExportJob` — still uses `ExportService::exportDir()` with raw
+  `mkdir()`/file write (same pattern that broke `GeneratePdfExportJob` under
+  `Storage::fake()`). Not currently failing because no test like
+  `export_file_stored_under_project_exports_directory` exists for Excel —
+  but should be refactored to write via `Storage::disk('local')->put()` for
+  consistency before such a test is added.
+- Vue page files exist (`Index.vue`, `Show.vue`, `ElevationTable.vue`,
+  `ClosureStatusBadge.vue`, `LongSectionChart.vue`, `CrossSectionChart.vue`)
+  but content/completeness against `architecture.md` prop/emit contracts is
+  **not yet verified**.
+- Component placement: `ElevationTable.vue`, `ClosureStatusBadge.vue`,
+  `LongSectionChart.vue`, `CrossSectionChart.vue` currently sit inside
+  `resources/js/Pages/Projects/` — per `architecture.md` these are reusable
+  components (not Inertia pages) and should eventually move to
+  `resources/js/Components/`. Non-blocking; `inertia.pages.paths` only
+  resolves what's explicitly `Inertia::render()`'d, so this doesn't break
+  tests, but worth cleaning up before the component tree grows.
 
 ### ⏳ Not Started
 - `VisualizationService`
-- Vue frontend pages and components
-- PDF / Excel / CSV export (PDF blocked by DomPDF issue)
-- Chart visualization
-- `ElevationTable.vue` component
+- Chart visualization wiring (frontend ↔ `ChartController` data)
 
 ---
 
@@ -115,9 +148,19 @@ Read the relevant doc before implementing any feature:
 
 ## Immediate Next Tasks
 
-1. Fix `ExportController` status guard — returning 422 instead of 403 for non-accepted projects
-2. Fix DomPDF — install/register `barryvdh/laravel-dompdf` so `GeneratePdfExportJob` works
-3. Fix `ProjectWorkflowTest` — Inertia view `[app]` not found; stub or bypass Inertia in tests
-4. Verify `ClosureCheckerService` end-to-end via `SurveyRecalculated` event
-5. Implement `VisualizationService` — long section + cross section chart data
-6. Build Vue frontend: `ElevationTable.vue`, `LongSectionChart.vue`, `ClosureStatusBadge.vue`
+1. Refactor `GenerateExcelExportJob` to write via `Storage::disk('local')->put()`
+   instead of `ExportService::exportDir()` + raw `mkdir()`, matching the
+   `GeneratePdfExportJob` fix — add a parity test
+   (`export_excel_file_stored_under_project_exports_directory`) to lock it in.
+2. Verify Vue page/component files (`Index.vue`, `Show.vue`,
+   `ElevationTable.vue`, `LongSectionChart.vue`, `CrossSectionChart.vue`,
+   `ClosureStatusBadge.vue`) against the prop/emit contracts in
+   `architecture.md`.
+3. Move `ElevationTable.vue`, `ClosureStatusBadge.vue`, `LongSectionChart.vue`,
+   `CrossSectionChart.vue` from `resources/js/Pages/Projects/` to
+   `resources/js/Components/` (cleanup, non-blocking).
+4. Implement `VisualizationService` — long section + cross section chart data
+   (DB-level aggregation, per `architecture.md`).
+5. Wire `ChartController` endpoints to `VisualizationService` and confirm
+   `long_section_chart_returns_json_array` / `cross_section_chart_returns_json`
+   assertions reflect real computed data, not placeholder shape.

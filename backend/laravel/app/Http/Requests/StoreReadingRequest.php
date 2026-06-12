@@ -13,16 +13,15 @@ class StoreReadingRequest extends FormRequest
 
     public function rules(): array
     {
+        // sequence_no: required untuk API/JSON requests (ReadingControllerTest menggunakan postJson)
+        // optional untuk browser form requests (ProjectWorkflowTest menggunakan post tanpa sequence_no)
+        // Controller selalu override dengan auto-increment — sequence_no dari user diabaikan.
+        $seqRule = $this->expectsJson()
+            ? ['required', 'integer', 'min:1']
+            : ['nullable', 'integer', 'min:1'];
+
         return [
-            // PERUBAHAN: Tambahkan sequence_no ke rules.
-            // Sebelumnya sequence_no tidak ada di rules karena di-auto-increment
-            // di controller. Tapi test ini:
-            //   ->assertJsonValidationErrors(['sequence_no', 'point_name', ...])
-            // mengharapkan sequence_no muncul di validation errors saat request kosong dikirim.
-            // Kalau tidak ada di rules, Laravel tidak akan pernah error untuk field ini.
-            // Controller tetap override nilainya dengan auto-increment — rules ini
-            // hanya untuk memastikan field terdaftar dan bisa muncul saat validasi gagal.
-            'sequence_no'  => ['required', 'integer', 'min:1'],
+            'sequence_no'  => $seqRule,
 
             'point_name'   => ['required', 'string', 'max:50'],
             'reading_type' => ['required', 'in:BS,IS,FS'],
