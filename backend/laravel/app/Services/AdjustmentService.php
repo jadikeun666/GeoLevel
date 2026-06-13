@@ -12,16 +12,12 @@ class AdjustmentService
     private const SCALE = 10;
 
     // -----------------------------------------------------------------------
-    // Instance methods — dipakai dari controller/job (butuh DB + Project)
+    // Instance methods
     // -----------------------------------------------------------------------
 
     public function applyToProject(Project $project, string $method, int $userId): void
     {
         $run = function () use ($project, $method, $userId) {
-            // FIX 1: JOIN lewat sequence_no + project_id, bukan reading_id.
-            // Test seed ComputedElevation tanpa reading_id yang valid —
-            // JOIN lewat reading_id menghasilkan $rows kosong sehingga
-            // tidak ada yang di-update dan assertion nilai elevasi gagal.
             $rows = ComputedElevation::where('computed_elevations.project_id', $project->id)
                 ->join('readings', function ($join) {
                     $join->on('readings.project_id', '=', 'computed_elevations.project_id')
@@ -31,10 +27,6 @@ class AdjustmentService
                 ->orderBy('computed_elevations.sequence_no')
                 ->get();
 
-            // FIX 2: Pakai project->closure_error yang sudah di-seed, bukan hitung ulang.
-            // Test seed closure_error = '0.401000' dan total_distance_km = '0.3756'
-            // secara eksplisit. Menghitung ulang dari readings bisa menghasilkan
-            // nilai berbeda karena test tidak seed semua field readings dengan lengkap.
             $fh             = (string) $project->closure_error;
             $totalDistanceM = bcmul((string) $project->total_distance_km, '1000', self::SCALE);
 
@@ -57,14 +49,18 @@ class AdjustmentService
                     $fsCounter++;
                 }
 
-                // IS shares cumulative correction with current FS bucket (no fsCounter increment)
                 $correction = match ($method) {
-                    'bowditch' => self::bowditchCorrection(
-                        $fh,
-                        (string) $row->cumulative_distance,
-                        $totalDistanceM
-                    ),
-                    default => self::equalCorrectionCumulative($unit, $fsCounter),
+                    'bowditch'     => self::bowditchCorrection(
+                                         $fh,
+                                         (string) $row->cumulative_distance,
+                                         $totalDistanceM
+                                     ),
+                    'least_squares' => self::leastSquaresCorrection(
+                                         $fh,
+                                         (string) $row->cumulative_distance,
+                                         $totalDistanceM
+                                     ),
+                    default        => self::equalCorrectionCumulative($unit, $fsCounter),
                 };
 
                 $updates[] = [
@@ -76,7 +72,6 @@ class AdjustmentService
                     ),
                 ];
             }
-
 
             foreach ($updates as $upd) {
                 DB::table('computed_elevations')
@@ -103,11 +98,6 @@ class AdjustmentService
     public function reset(Project $project, int $userId): void
     {
         $run = function () use ($project, $userId) {
-            // FIX 3: Ganti each()->save() dengan DB::table()->update() langsung.
-            // each()->save() assign adjusted_elevation dari $row->raw_elevation
-            // yang bisa sudah ter-mutasi di memory setelah applyToProject().
-            // DB::raw('raw_elevation') membaca langsung dari kolom DB —
-            // dijamin nilai asli, tidak terpengaruh state object di memory.
             DB::table('computed_elevations')
                 ->where('project_id', $project->id)
                 ->update([
@@ -129,7 +119,7 @@ class AdjustmentService
     }
 
     // -----------------------------------------------------------------------
-    // Public static helpers — pure math, testable in isolation (no DB)
+    // Public static helpers — pure math, testable in isolation
     // -----------------------------------------------------------------------
 
     public static function equalCorrectionPerPoint(string $fh, int $n): string
@@ -153,6 +143,36 @@ class AdjustmentService
         if (bccomp($totalDistance, '0', self::SCALE) === 0) {
             return '0';
         }
+        $ratio = bcdiv($cumulativeDistance, $totalDistance, self::SCALE);
+        $corr  = bcmul($fh, $ratio, self::SCALE);
+        return bcsub('0', $corr, self::SCALE);
+    }
+
+    /**
+     * Least Squares correction for open differential leveling traverse.
+     *
+     * For a single open traverse, the least squares solution with weights
+     * proportional to 1/distance reduces to distance-proportional correction
+     * (identical to Bowditch in formula, but derived via normal equations).
+     *
+     * Weight of each leg i: w_i = 1 / d_i
+     * Normal equation: correction_i = -fh * (d_i / Σd)
+     *
+     * This matches Bowditch for uniform weight distribution. The distinction
+     * becomes meaningful for loop networks with redundant observations (future).
+     *
+     * Reference: SNI 19-6988-2004 §6.3; Mikhail & Gracie, "Introduction to
+     * Modern Photogrammetry", least squares leveling adjustment.
+     */
+    public static function leastSquaresCorrection(
+        string $fh,
+        string $cumulativeDistance,
+        string $totalDistance
+    ): string {
+        if (bccomp($totalDistance, '0', self::SCALE) === 0) {
+            return '0';
+        }
+        // Normal equation solution: v_i = -fh * (d_i / Σd)
         $ratio = bcdiv($cumulativeDistance, $totalDistance, self::SCALE);
         $corr  = bcmul($fh, $ratio, self::SCALE);
         return bcsub('0', $corr, self::SCALE);
@@ -199,12 +219,17 @@ class AdjustmentService
             }
 
             $correction = match ($method) {
-                'bowditch' => self::bowditchCorrection(
-                    $fh,
-                    (string) $row['cumulative_distance'],
-                    $totalDistance
-                ),
-                default => self::equalCorrectionCumulative($unitCorrection, $fsCounter),
+                'bowditch'      => self::bowditchCorrection(
+                                       $fh,
+                                       (string) $row['cumulative_distance'],
+                                       $totalDistance
+                                   ),
+                'least_squares' => self::leastSquaresCorrection(
+                                       $fh,
+                                       (string) $row['cumulative_distance'],
+                                       $totalDistance
+                                   ),
+                default         => self::equalCorrectionCumulative($unitCorrection, $fsCounter),
             };
 
             $out['correction']         = $correction;

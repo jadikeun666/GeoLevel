@@ -14,6 +14,6 @@ class RunClosureCheck implements ShouldQueue
 
     public function handle(SurveyRecalculated $event): void
     {
-        $this->closureChecker->check($event->projectId, $event->userId);
+        $this->closureChecker->evaluate($event->projectId, $event->userId);
     }
 }

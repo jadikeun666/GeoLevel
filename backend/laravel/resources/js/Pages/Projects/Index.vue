@@ -9,19 +9,41 @@
           <h1 class="text-xl font-bold text-stone-800 tracking-tight">Proyek Survei</h1>
         </div>
         <button
-          @click="showCreate = true"
+          @click="openCreate"
           class="inline-flex items-center gap-2 bg-stone-800 hover:bg-stone-700 text-white text-sm font-semibold px-4 py-2 rounded transition-colors"
         >
           <span class="text-base leading-none">+</span> Proyek Baru
         </button>
       </header>
 
-      <!-- ── Stats bar ──────────────────────────────────────── -->
-      <div class="border-b border-stone-200 bg-white px-6 py-3 flex gap-6 text-xs text-stone-500">
-        <span>Total: <strong class="text-stone-800">{{ projects.length }}</strong></span>
-        <span>Diterima: <strong class="text-green-700">{{ countByStatus('accepted') }}</strong></span>
-        <span>Ditolak: <strong class="text-red-700">{{ countByStatus('rejected') }}</strong></span>
-        <span>Draft: <strong class="text-stone-600">{{ countByStatus('draft') }}</strong></span>
+      <!-- ── Stats + Search bar ─────────────────────────────── -->
+      <div class="border-b border-stone-200 bg-white px-6 py-3 flex flex-wrap items-center gap-4">
+        <div class="flex gap-6 text-xs text-stone-500">
+          <span>Total: <strong class="text-stone-800">{{ projects.length }}</strong></span>
+          <span>Diterima: <strong class="text-green-700">{{ countByStatus('accepted') }}</strong></span>
+          <span>Ditolak: <strong class="text-red-700">{{ countByStatus('rejected') }}</strong></span>
+          <span>Draft: <strong class="text-stone-600">{{ countByStatus('draft') }}</strong></span>
+        </div>
+        <div class="ml-auto flex items-center gap-2">
+          <!-- Status filter -->
+          <select
+            v-model="filterStatus"
+            class="border border-stone-200 rounded-lg px-3 py-1.5 text-xs text-stone-700 bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-400"
+          >
+            <option value="">Semua Status</option>
+            <option value="draft">Draft</option>
+            <option value="calculated">Dihitung</option>
+            <option value="accepted">Diterima</option>
+            <option value="rejected">Ditolak</option>
+          </select>
+          <!-- Search -->
+          <input
+            v-model="search"
+            type="search"
+            placeholder="Cari nama / lokasi…"
+            class="border border-stone-200 rounded-lg px-3 py-1.5 text-xs text-stone-700 bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-400 w-48"
+          />
+        </div>
       </div>
 
       <!-- ── Content ────────────────────────────────────────── -->
@@ -29,80 +51,100 @@
 
         <!-- Empty state -->
         <div
-          v-if="projects.length === 0"
+          v-if="filtered.length === 0"
           class="border-2 border-dashed border-stone-200 rounded-xl text-center py-20 text-stone-400"
         >
           <div class="text-4xl mb-3">📐</div>
-          <p class="text-sm font-medium">Belum ada proyek.</p>
-          <p class="text-xs mt-1">Klik <em>Proyek Baru</em> untuk memulai survei pertama.</p>
+          <p class="text-sm font-medium">
+            {{ projects.length === 0 ? 'Belum ada proyek.' : 'Tidak ada proyek yang cocok.' }}
+          </p>
+          <p class="text-xs mt-1" v-if="projects.length === 0">
+            Klik <em>Proyek Baru</em> untuk memulai survei pertama.
+          </p>
         </div>
 
         <!-- Project grid -->
         <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          <Link
-            v-for="p in projects"
+          <div
+            v-for="p in filtered"
             :key="p.id"
-            :href="route('projects.show', p.id)"
-            class="group block border border-stone-200 bg-white rounded-xl p-5 hover:border-stone-400 hover:shadow-md transition-all"
+            class="group relative block border border-stone-200 bg-white rounded-xl p-5 hover:border-stone-400 hover:shadow-md transition-all"
           >
-            <!-- Header row -->
-            <div class="flex items-start justify-between gap-2 mb-3">
-              <h2 class="text-sm font-bold text-stone-800 group-hover:text-stone-900 leading-snug">
-                {{ p.name }}
-              </h2>
-              <StatusPill :status="p.status" />
+            <!-- Action buttons (top-right) -->
+            <div class="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                @click.prevent="openEdit(p)"
+                title="Edit"
+                class="text-xs px-2 py-1 rounded bg-stone-100 hover:bg-stone-200 text-stone-600"
+              >✏️</button>
+              <button
+                @click.prevent="confirmDelete(p)"
+                title="Hapus"
+                class="text-xs px-2 py-1 rounded bg-red-50 hover:bg-red-100 text-red-600"
+              >🗑️</button>
             </div>
 
-            <!-- Meta -->
-            <dl class="text-xs text-stone-500 space-y-1">
-              <div class="flex gap-2">
-                <dt class="w-20 shrink-0">Lokasi</dt>
-                <dd class="text-stone-700 truncate">{{ p.location }}</dd>
+            <!-- Card body — navigate on click -->
+            <Link :href="route('projects.show', p.id)" class="block">
+              <!-- Header row -->
+              <div class="flex items-start justify-between gap-2 mb-3 pr-16">
+                <h2 class="text-sm font-bold text-stone-800 group-hover:text-stone-900 leading-snug">
+                  {{ p.name }}
+                </h2>
+                <StatusPill :status="p.status" />
               </div>
-              <div class="flex gap-2">
-                <dt class="w-20 shrink-0">Tanggal</dt>
-                <dd class="text-stone-700">{{ formatDate(p.survey_date) }}</dd>
-              </div>
-              <div class="flex gap-2">
-                <dt class="w-20 shrink-0">Benchmark</dt>
-                <dd class="text-stone-700">{{ p.benchmark_name }} ({{ p.benchmark_elevation }} m)</dd>
-              </div>
-              <div class="flex gap-2" v-if="p.closure_error != null">
-                <dt class="w-20 shrink-0">fh</dt>
-                <dd :class="p.status === 'accepted' ? 'text-green-700' : 'text-red-600'" class="font-semibold tabular-nums">
-                  {{ Number(p.closure_error).toFixed(6) }} m
-                </dd>
-              </div>
-            </dl>
 
-            <!-- Footer -->
-            <div class="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between">
-              <span class="text-[10px] text-stone-400 uppercase tracking-wider">
-                {{ p.tolerance_class }} · {{ p.adjustment_method }}
-              </span>
-              <span class="text-xs text-stone-400 group-hover:text-stone-600 transition-colors">
-                Buka →
-              </span>
-            </div>
-          </Link>
+              <!-- Meta -->
+              <dl class="text-xs text-stone-500 space-y-1">
+                <div class="flex gap-2">
+                  <dt class="w-20 shrink-0">Lokasi</dt>
+                  <dd class="text-stone-700 truncate">{{ p.location }}</dd>
+                </div>
+                <div class="flex gap-2">
+                  <dt class="w-20 shrink-0">Tanggal</dt>
+                  <dd class="text-stone-700">{{ formatDate(p.survey_date) }}</dd>
+                </div>
+                <div class="flex gap-2">
+                  <dt class="w-20 shrink-0">Benchmark</dt>
+                  <dd class="text-stone-700">{{ p.benchmark_name }} ({{ p.benchmark_elevation }} m)</dd>
+                </div>
+                <div class="flex gap-2" v-if="p.closure_error != null">
+                  <dt class="w-20 shrink-0">fh</dt>
+                  <dd :class="p.status === 'accepted' ? 'text-green-700' : 'text-red-600'" class="font-semibold tabular-nums">
+                    {{ Number(p.closure_error).toFixed(6) }} m
+                  </dd>
+                </div>
+              </dl>
+
+              <!-- Footer -->
+              <div class="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between">
+                <span class="text-[10px] text-stone-400 uppercase tracking-wider">
+                  {{ p.tolerance_class }} · {{ p.adjustment_method }}
+                </span>
+                <span class="text-xs text-stone-400 group-hover:text-stone-600 transition-colors">
+                  Buka →
+                </span>
+              </div>
+            </Link>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- ── Create Modal ───────────────────────────────────────── -->
+    <!-- ── Create / Edit Modal ────────────────────────────────── -->
     <Teleport to="body">
       <div
-        v-if="showCreate"
+        v-if="showForm"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-        @click.self="showCreate = false"
+        @click.self="closeForm"
       >
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
           <div class="border-b border-stone-100 px-6 py-4 flex items-center justify-between">
-            <h2 class="font-bold text-stone-800">Proyek Baru</h2>
-            <button @click="showCreate = false" class="text-stone-400 hover:text-stone-600 text-xl leading-none">×</button>
+            <h2 class="font-bold text-stone-800">{{ editTarget ? 'Edit Proyek' : 'Proyek Baru' }}</h2>
+            <button @click="closeForm" class="text-stone-400 hover:text-stone-600 text-xl leading-none">×</button>
           </div>
 
-          <form @submit.prevent="submitCreate" class="px-6 py-5 space-y-4">
+          <form @submit.prevent="submitForm" class="px-6 py-5 space-y-4">
             <Field label="Nama Proyek" required>
               <input v-model="form.name" type="text" v-bind="fieldAttrs" placeholder="Jalur Sipat Datar STA 0+000 s/d 1+000" />
             </Field>
@@ -135,6 +177,7 @@
                 <select v-model="form.adjustment_method" v-bind="fieldAttrs">
                   <option value="equal">Equal Distribution</option>
                   <option value="bowditch">Bowditch</option>
+                  <option value="least_squares">Least Squares</option>
                 </select>
               </Field>
             </div>
@@ -142,14 +185,14 @@
               <textarea v-model="form.description" v-bind="fieldAttrs" rows="2" placeholder="Opsional…" />
             </Field>
 
-            <div v-if="errors" class="text-xs text-red-600 space-y-1">
-              <p v-for="(msgs, field) in errors" :key="field">
-                <strong class="capitalize">{{ field }}</strong>: {{ msgs[0] }}
+            <div v-if="formErrors" class="text-xs text-red-600 space-y-1">
+              <p v-for="(msgs, field) in formErrors" :key="field">
+                <strong class="capitalize">{{ field }}</strong>: {{ Array.isArray(msgs) ? msgs[0] : msgs }}
               </p>
             </div>
 
             <div class="flex justify-end gap-3 pt-2">
-              <button type="button" @click="showCreate = false" class="text-sm text-stone-500 hover:text-stone-700 px-4 py-2">
+              <button type="button" @click="closeForm" class="text-sm text-stone-500 hover:text-stone-700 px-4 py-2">
                 Batal
               </button>
               <button
@@ -157,10 +200,39 @@
                 :disabled="submitting"
                 class="bg-stone-800 hover:bg-stone-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2 rounded-lg transition-colors"
               >
-                {{ submitting ? 'Menyimpan…' : 'Simpan Proyek' }}
+                {{ submitting ? 'Menyimpan…' : (editTarget ? 'Simpan Perubahan' : 'Simpan Proyek') }}
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ── Delete Confirm Modal ───────────────────────────────── -->
+    <Teleport to="body">
+      <div
+        v-if="deleteTarget"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+        @click.self="deleteTarget = null"
+      >
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+          <h2 class="font-bold text-stone-800 mb-2">Hapus Proyek?</h2>
+          <p class="text-sm text-stone-500 mb-1">
+            Proyek <strong class="text-stone-700">{{ deleteTarget.name }}</strong> akan dihapus permanen beserta semua data bacaan dan elevasi.
+          </p>
+          <p class="text-xs text-red-600 mb-5">Tindakan ini tidak dapat dibatalkan.</p>
+          <div class="flex justify-end gap-3">
+            <button @click="deleteTarget = null" class="text-sm text-stone-500 hover:text-stone-700 px-4 py-2">
+              Batal
+            </button>
+            <button
+              @click="submitDelete"
+              :disabled="submitting"
+              class="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2 rounded-lg transition-colors"
+            >
+              {{ submitting ? 'Menghapus…' : 'Ya, Hapus' }}
+            </button>
+          </div>
         </div>
       </div>
     </Teleport>
@@ -178,10 +250,31 @@ const props = defineProps({
   projects: { type: Array, default: () => [] },
 })
 
-// ── Modal state ──────────────────────────────────────────────
-const showCreate = ref(false)
-const submitting = ref(false)
-const errors     = ref(null)
+// ── Filter / search ──────────────────────────────────────────
+const search       = ref('')
+const filterStatus = ref('')
+
+const filtered = computed(() => {
+  let list = props.projects
+  if (filterStatus.value) {
+    list = list.filter(p => p.status === filterStatus.value)
+  }
+  if (search.value.trim()) {
+    const q = search.value.trim().toLowerCase()
+    list = list.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.location.toLowerCase().includes(q)
+    )
+  }
+  return list
+})
+
+// ── Form state (shared create / edit) ────────────────────────
+const showForm    = ref(false)
+const editTarget  = ref(null)   // null = create mode, Project = edit mode
+const deleteTarget = ref(null)
+const submitting  = ref(false)
+const formErrors  = ref(null)
 
 const blankForm = () => ({
   name:                '',
@@ -200,17 +293,65 @@ const fieldAttrs = {
   class: 'w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-stone-400 bg-stone-50',
 }
 
-function submitCreate() {
-  submitting.value = true
-  errors.value     = null
+function openCreate() {
+  editTarget.value = null
+  form.value       = blankForm()
+  formErrors.value = null
+  showForm.value   = true
+}
 
-  router.post(route('projects.store'), form.value, {
-    onSuccess: () => {
-      showCreate.value = false
-      form.value       = blankForm()
-    },
-    onError: (e) => { errors.value = e },
-    onFinish: () => { submitting.value = false },
+function openEdit(project) {
+  editTarget.value = project
+  form.value = {
+    name:                project.name,
+    location:            project.location,
+    survey_date:         project.survey_date,
+    benchmark_name:      project.benchmark_name,
+    benchmark_elevation: project.benchmark_elevation,
+    description:         project.description ?? '',
+    tolerance_class:     project.tolerance_class,
+    adjustment_method:   project.adjustment_method,
+  }
+  formErrors.value = null
+  showForm.value   = true
+}
+
+function closeForm() {
+  showForm.value   = false
+  editTarget.value = null
+  formErrors.value = null
+}
+
+function submitForm() {
+  submitting.value = true
+  formErrors.value = null
+
+  if (editTarget.value) {
+    router.put(route('projects.update', editTarget.value.id), form.value, {
+      onSuccess: () => closeForm(),
+      onError:   (e) => { formErrors.value = e },
+      onFinish:  () => { submitting.value = false },
+    })
+  } else {
+    router.post(route('projects.store'), form.value, {
+      onSuccess: () => closeForm(),
+      onError:   (e) => { formErrors.value = e },
+      onFinish:  () => { submitting.value = false },
+    })
+  }
+}
+
+// ── Delete ───────────────────────────────────────────────────
+function confirmDelete(project) {
+  deleteTarget.value = project
+}
+
+function submitDelete() {
+  if (!deleteTarget.value) return
+  submitting.value = true
+  router.delete(route('projects.destroy', deleteTarget.value.id), {
+    onSuccess: () => { deleteTarget.value = null },
+    onFinish:  () => { submitting.value = false },
   })
 }
 

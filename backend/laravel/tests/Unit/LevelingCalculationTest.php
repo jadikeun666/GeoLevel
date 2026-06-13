@@ -66,6 +66,7 @@ class LevelingCalculationTest extends TestCase
 
         return [
             'project'    => $project->fresh(),
+            'user'       => $user,
             'elevations' => \App\Models\ComputedElevation::where('project_id', $project->id)
                                ->orderBy('sequence_no')->get(),
         ];
@@ -237,10 +238,10 @@ class LevelingCalculationTest extends TestCase
     public function equal_adjustment_correction_per_point(): void
     {
         // correction_each = −0.4010 / 3 = −0.133667
-        ['project' => $project, 'elevations' => $elevs] = $this->seedAndCalculate();
+        ['project' => $project, 'user' => $user, 'elevations' => $elevs] = $this->seedAndCalculate();
 
         $adjService = app(AdjustmentService::class);
-        $adjService->applyToProject($project, 'equal', 1);
+        $adjService->applyToProject($project, 'equal', $user->id);
 
         $elevs = \App\Models\ComputedElevation::where('project_id', $project->id)
             ->orderBy('sequence_no')->get();
@@ -260,9 +261,9 @@ class LevelingCalculationTest extends TestCase
     public function equal_adjustment_tp1_adjusted_elevation(): void
     {
         // Elev(TP-1) adj = 100.0350 − 0.133667 = 99.901333
-        ['project' => $project] = $this->seedAndCalculate();
+        ['project' => $project, 'user' => $user] = $this->seedAndCalculate();
         $adjService = app(AdjustmentService::class);
-        $adjService->applyToProject($project, 'equal', 1);
+        $adjService->applyToProject($project, 'equal', $user->id);
 
         $tp1 = \App\Models\ComputedElevation::where('project_id', $project->id)
             ->where('sequence_no', 2)->first();
@@ -275,9 +276,9 @@ class LevelingCalculationTest extends TestCase
     public function equal_adjustment_tp2_adjusted_elevation(): void
     {
         // Elev(TP-2) adj = 100.2580 − 0.267333 = 99.990667
-        ['project' => $project] = $this->seedAndCalculate();
+        ['project' => $project, 'user' => $user] = $this->seedAndCalculate();
         $adjService = app(AdjustmentService::class);
-        $adjService->applyToProject($project, 'equal', 1);
+        $adjService->applyToProject($project, 'equal', $user->id);
 
         $tp2 = \App\Models\ComputedElevation::where('project_id', $project->id)
             ->where('sequence_no', 4)->first();
@@ -290,9 +291,9 @@ class LevelingCalculationTest extends TestCase
     public function equal_adjustment_bm_b_adjusted_elevation(): void
     {
         // Elev(BM-B) adj = 100.4010 − 0.401000 = 100.000000
-        ['project' => $project] = $this->seedAndCalculate();
+        ['project' => $project, 'user' => $user] = $this->seedAndCalculate();
         $adjService = app(AdjustmentService::class);
-        $adjService->applyToProject($project, 'equal', 1);
+        $adjService->applyToProject($project, 'equal', $user->id);
 
         $bmB = \App\Models\ComputedElevation::where('project_id', $project->id)
             ->where('sequence_no', 6)->first();
@@ -304,11 +305,11 @@ class LevelingCalculationTest extends TestCase
     #[Test]
     public function adjustment_is_reversible_reset_to_zero(): void
     {
-        ['project' => $project] = $this->seedAndCalculate();
+        ['project' => $project, 'user' => $user] = $this->seedAndCalculate();
         $adjService = app(AdjustmentService::class);
 
-        $adjService->applyToProject($project, 'equal', 1);
-        $adjService->reset($project, 1);
+        $adjService->applyToProject($project, 'equal', $user->id);
+        $adjService->reset($project, $user->id);
 
         $elevs = \App\Models\ComputedElevation::where('project_id', $project->id)->get();
         foreach ($elevs as $e) {

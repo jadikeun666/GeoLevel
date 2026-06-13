@@ -21,6 +21,12 @@ raw field readings → corrected elevations → charts → PDF field book.
 | Auth         | Laravel Breeze                   |
 | Queue        | Laravel Queue (database driver)  |
 
+> Note: dev environment runs PHP 8.5.4 (not 8.3 as documented). This works
+> for the current stack since `maatwebsite/excel` is already installed and
+> wired — only a *future* `composer update` of that package would hit the
+> known `phpoffice/phpspreadsheet` PHP 8.5 incompatibility. No action needed
+> unless that package needs upgrading.
+
 ---
 
 ## Current Build Status
@@ -40,58 +46,43 @@ raw field readings → corrected elevations → charts → PDF field book.
 - `RecalculateSurveyJob` — queued, with `failed()` handler
 - `ProjectController` — full CRUD + adjust + adjust-reset + calculate
 - `ReadingController` — full CRUD
-- `AdjustmentService` — equal, bowditch, reversible
+- `AdjustmentService` — equal, bowditch, least_squares (distance-weighted normal equations)
 - All Events: `SurveyRecalculated`, `ClosureChecked`, `AdjustmentApplied`, `ExportGenerated`
 - All Listeners: `RunClosureCheck`, `LogClosureResult`, `LogAdjustmentApplied`, `LogExportGenerated`
 - `ExportService`, `GeneratePdfExportJob`, `GenerateExcelExportJob`, `GenerateCsvExportJob`
 - `ExportController`, `ChartController`
 - Form Requests: `StoreReadingRequest`, `UpdateReadingRequest`, `StoreProjectRequest`, `UpdateProjectRequest`, `AdjustProjectRequest`
 - Policies: `ProjectPolicy`
-- `ExportController` — status-guard now returns 403 via `ExportNotAllowedException`
+- `ExportController` — status-guard returns 403 via `ExportNotAllowedException`
 - `barryvdh/laravel-dompdf` installed and wired into `GeneratePdfExportJob`
-- `GeneratePdfExportJob` — renders via DomPDF (`->output()`), writes through
-  `Storage::disk('local')` (Storage::fake()-safe for tests)
+- `GeneratePdfExportJob` — renders via DomPDF, writes through `Storage::disk('local')`
+- `GenerateExcelExportJob` — writes via `Excel::store(..., 'local')`
 - `ExportGenerated` event — carries `projectId`, `userId`, `format`, `filePath`
-  (fixes `LogExportGenerated` undefined-property error)
-- `resources/views/app.blade.php` — Inertia root template created
+- `resources/views/app.blade.php` — Inertia root template
 - `config/inertia.php` published, `pages.paths` corrected to `resources/js/Pages`
-  (was defaulting to lowercase `js/pages`, breaking `assertInertia()->component()`)
-- `ProjectWorkflowTest` — all 20 tests pass (Inertia render + auth + CRUD + calculate/adjust/export/chart)
-- `ExportControllerTest` — all tests pass, including
-  `export_file_stored_under_project_exports_directory`
-- `ClosureCheckerService` — covered by full suite, all assertions pass (91/91)
+- `ClosureCheckerService` — `computeClosureError`, `computeAllowedTolerance`, `determineStatus`, `check`
 - `app/Exceptions/ExportNotAllowedException.php`
-- Excel export sheets split into PSR-4-compliant files:
-  `ElevasiSheet.php`, `KoreksiSheet.php`, `RingkasanSheet.php`
-- `resources/views/exports/field_book.blade.php` exists
-- Vue page stubs exist: `Pages/Projects/Index.vue`, `Pages/Projects/Show.vue`,
-  `Pages/Projects/ElevationTable.vue`, `Pages/Projects/ClosureStatusBadge.vue`,
-  `Pages/Projects/LongSectionChart.vue`, `Pages/Projects/CrossSectionChart.vue`
-
-**Full test suite: `OK (91 tests, 230 assertions)`**
+- Excel export sheets: `ElevasiSheet.php`, `KoreksiSheet.php`, `RingkasanSheet.php`
+- `resources/views/exports/field_book.blade.php`
+- Vue components (verified against architecture.md contracts):
+  - `ElevationTable.vue`, `ClosureStatusBadge.vue`, `LongSectionChart.vue`, `CrossSectionChart.vue`
+  - `ExportButton.vue`, `StatusPill.vue`, `TabBtn.vue`, `Field.vue`
+  - `Pages/Projects/Index.vue` — listing, search/filter by name+location+status,
+    create modal, edit modal, delete confirm modal, least_squares option exposed
+  - `Pages/Projects/Show.vue` — tabs (Bacaan/Elevasi/Grafik/Aktivitas), reading
+    CRUD modal with live BT validation preview, adjustment modal, recalculate button,
+    chart fetch via `chart.longsection` / `chart.crosssection` routes
+- `VisualizationService` — `longSection`, `crossSection`, `crossSectionStations`
+- `ChartController` — wired to `VisualizationService`, handles `?station=` query param
+- `CrossSection` model — `HasFactory` trait added, `$fillable`, `$casts`, `project()` relation
+- `CrossSectionFactory` — default state with `station_name`, `station_distance`, `offsets` JSON array
+- Full test suite: **OK (171 tests, 412 assertions)** — zero failures
 
 ### 🔄 In Progress
-- `GenerateExcelExportJob` — still uses `ExportService::exportDir()` with raw
-  `mkdir()`/file write (same pattern that broke `GeneratePdfExportJob` under
-  `Storage::fake()`). Not currently failing because no test like
-  `export_file_stored_under_project_exports_directory` exists for Excel —
-  but should be refactored to write via `Storage::disk('local')->put()` for
-  consistency before such a test is added.
-- Vue page files exist (`Index.vue`, `Show.vue`, `ElevationTable.vue`,
-  `ClosureStatusBadge.vue`, `LongSectionChart.vue`, `CrossSectionChart.vue`)
-  but content/completeness against `architecture.md` prop/emit contracts is
-  **not yet verified**.
-- Component placement: `ElevationTable.vue`, `ClosureStatusBadge.vue`,
-  `LongSectionChart.vue`, `CrossSectionChart.vue` currently sit inside
-  `resources/js/Pages/Projects/` — per `architecture.md` these are reusable
-  components (not Inertia pages) and should eventually move to
-  `resources/js/Components/`. Non-blocking; `inertia.pages.paths` only
-  resolves what's explicitly `Inertia::render()`'d, so this doesn't break
-  tests, but worth cleaning up before the component tree grows.
+- (none)
 
 ### ⏳ Not Started
-- `VisualizationService`
-- Chart visualization wiring (frontend ↔ `ChartController` data)
+- (none identified — core feature-complete per architecture.md scope)
 
 ---
 
@@ -122,13 +113,13 @@ raw field readings → corrected elevations → charts → PDF field book.
 
 ## Main Services
 
-| Service                      | Responsibility                          |
-| ---------------------------- | --------------------------------------- |
-| `LevelingCalculationService` | Core elevation calculation pipeline     |
-| `ClosureCheckerService`      | Closure error + tolerance check         |
-| `AdjustmentService`          | Equal / Bowditch / Least Squares        |
-| `VisualizationService`       | Chart-ready dataset preparation         |
-| `ExportService`              | PDF / Excel / CSV orchestration         |
+| Service                      | Responsibility                                       | Status |
+| ----------------------------- | ---------------------------------------------------- | ------ |
+| `LevelingCalculationService` | Core elevation calculation pipeline                  | ✅ Done |
+| `ClosureCheckerService`      | Closure error + tolerance check                      | ✅ Done |
+| `AdjustmentService`          | Equal / Bowditch / Least Squares (normal equations)  | ✅ Done |
+| `VisualizationService`       | Chart-ready dataset preparation                      | ✅ Done |
+| `ExportService`              | PDF / Excel / CSV orchestration                      | ✅ Done |
 
 ---
 
@@ -146,21 +137,20 @@ Read the relevant doc before implementing any feature:
 
 ---
 
-## Immediate Next Tasks
+## Adjustment Methods Reference
 
-1. Refactor `GenerateExcelExportJob` to write via `Storage::disk('local')->put()`
-   instead of `ExportService::exportDir()` + raw `mkdir()`, matching the
-   `GeneratePdfExportJob` fix — add a parity test
-   (`export_excel_file_stored_under_project_exports_directory`) to lock it in.
-2. Verify Vue page/component files (`Index.vue`, `Show.vue`,
-   `ElevationTable.vue`, `LongSectionChart.vue`, `CrossSectionChart.vue`,
-   `ClosureStatusBadge.vue`) against the prop/emit contracts in
-   `architecture.md`.
-3. Move `ElevationTable.vue`, `ClosureStatusBadge.vue`, `LongSectionChart.vue`,
-   `CrossSectionChart.vue` from `resources/js/Pages/Projects/` to
-   `resources/js/Components/` (cleanup, non-blocking).
-4. Implement `VisualizationService` — long section + cross section chart data
-   (DB-level aggregation, per `architecture.md`).
-5. Wire `ChartController` endpoints to `VisualizationService` and confirm
-   `long_section_chart_returns_json_array` / `cross_section_chart_returns_json`
-   assertions reflect real computed data, not placeholder shape.
+| Method          | Formula                              | Notes                                    |
+| --------------- | ------------------------------------ | ---------------------------------------- |
+| `equal`         | `correction = -fh / n`              | Equal share per FS point                 |
+| `bowditch`      | `correction = -fh × (d_i / Σd)`    | Distance-proportional                    |
+| `least_squares` | `correction = -fh × (d_i / Σd)`    | Normal equations, same as Bowditch for   |
+|                 |                                      | single open traverse; distinct for loop  |
+|                 |                                      | networks with redundant obs (future)     |
+
+## Next Session
+
+Project is feature-complete. Possible extensions:
+- Loop network least squares (redundant observations, full normal equation matrix)
+- Seeder with canonical worked example from `docs/formulas.md`
+- Production deployment config (Supervisor, queue worker, storage symlink)
+- E2E tests (Playwright/Cypress) for frontend flows
