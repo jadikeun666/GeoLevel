@@ -67,7 +67,7 @@ test.describe('Daftar Proyek', () => {
     await page.locator('input[placeholder="100.0000"]').fill('100');
 
     await page.getByRole('button', { name: /Simpan/ }).click();
-    await expect(page.getByRole('heading', { name: 'Proyek E2E Test' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Proyek E2E Test' }).first()).toBeVisible();
   });
 });
 

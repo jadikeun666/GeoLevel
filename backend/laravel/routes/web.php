@@ -2,18 +2,23 @@
 
 use App\Http\Controllers\ChartController;
 use App\Http\Controllers\ExportController;
+use App\Http\Controllers\NetworkLegController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReadingController;
 use Illuminate\Support\Facades\Route;
 
-// ── Redirect root ke halaman proyek ──────────────────────────────────────
-Route::get('/', fn () => redirect()->route('projects.index'));
+// ── Landing page (welcome.blade.php) ─────────────────────────────────────
+// Ditampilkan ke semua visitor. User yang sudah login tetap bisa melihat
+// landing page — tombol CTA di view sudah menyesuaikan via @auth/@guest.
+Route::get('/', function () {
+    return view('welcome');
+})->name('home');
 
 // ── Auth routes (Laravel Breeze) ─────────────────────────────────────────
 require __DIR__ . '/auth.php';
 
-// Tambah setelah require auth routes
+// ── Redirect /dashboard ke projects ──────────────────────────────────────
 Route::get('/dashboard', function () {
     return redirect()->route('projects.index');
 })->middleware(['auth', 'verified'])->name('dashboard');
@@ -21,13 +26,12 @@ Route::get('/dashboard', function () {
 // ── Authenticated routes ──────────────────────────────────────────────────
 // Catatan: middleware 'verified' dihapus dari group utama agar test JSON
 // (postJson/putJson/deleteJson/getJson) tidak diblokir redirect 302.
-// Verifikasi email tetap diberlakukan di route dashboard dan profile via
-// middleware individual jika diperlukan.
+// Verifikasi email tetap diberlakukan di route profile via middleware individual.
 Route::middleware(['auth'])->group(function () {
 
     // ── Profile (dari Breeze) ─────────────────────────────────────────────
-    Route::get('/profile',    [ProfileController::class, 'edit'])->name('profile.edit')->middleware('verified');
-    Route::patch('/profile',  [ProfileController::class, 'update'])->name('profile.update')->middleware('verified');
+    Route::get   ('/profile', [ProfileController::class, 'edit'])->name('profile.edit')->middleware('verified');
+    Route::patch ('/profile', [ProfileController::class, 'update'])->name('profile.update')->middleware('verified');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy')->middleware('verified');
 
     // ── Projects CRUD ─────────────────────────────────────────────────────
@@ -41,14 +45,23 @@ Route::middleware(['auth'])->group(function () {
 
     // ── Readings (scoped ke project) ──────────────────────────────────────
     // Tidak ada index/create/edit/show — semua via Show.vue
-    Route::post  ('/projects/{project}/readings',            [ReadingController::class, 'store'])->name('readings.store');
-    Route::put   ('/projects/{project}/readings/{reading}',  [ReadingController::class, 'update'])->name('readings.update');
-    Route::delete('/projects/{project}/readings/{reading}',  [ReadingController::class, 'destroy'])->name('readings.destroy');
+    Route::post  ('/projects/{project}/readings',           [ReadingController::class, 'store'])->name('readings.store');
+    Route::put   ('/projects/{project}/readings/{reading}', [ReadingController::class, 'update'])->name('readings.update');
+    Route::delete('/projects/{project}/readings/{reading}', [ReadingController::class, 'destroy'])->name('readings.destroy');
 
     // ── Kalkulasi & Perataan ──────────────────────────────────────────────
-    Route::post('/projects/{project}/calculate',      [ProjectController::class, 'calculate'])->name('projects.calculate');
-    Route::post('/projects/{project}/adjust',         [ProjectController::class, 'adjust'])->name('projects.adjust');
-    Route::post('/projects/{project}/adjust/reset',   [ProjectController::class, 'resetAdjustment'])->name('projects.adjust.reset');
+    Route::post('/projects/{project}/calculate',    [ProjectController::class, 'calculate'])->name('projects.calculate');
+    Route::post('/projects/{project}/adjust',       [ProjectController::class, 'adjust'])->name('projects.adjust');
+    Route::post('/projects/{project}/adjust/reset', [ProjectController::class, 'resetAdjustment'])->name('projects.adjust.reset');
+
+    // ── Network Legs (loop network least squares) ──────────────────────────
+    // Jalur tambahan opsional untuk jaring dengan redundant observations.
+    // Lihat App\Services\LeastSquaresAdjustmentService dan
+    // docs/formulas.md §"Loop Network Least Squares".
+    Route::get   ('/projects/{project}/network-legs',           [NetworkLegController::class, 'index'])->name('network-legs.index');
+    Route::post  ('/projects/{project}/network-legs',           [NetworkLegController::class, 'store'])->name('network-legs.store');
+    Route::delete('/projects/{project}/network-legs/{leg}',     [NetworkLegController::class, 'destroy'])->name('network-legs.destroy');
+    Route::post  ('/projects/{project}/network-legs/adjust',    [NetworkLegController::class, 'adjust'])->name('network-legs.adjust');
 
     // ── Chart (JSON — dipanggil axios dari Vue) ───────────────────────────
     Route::get('/projects/{project}/chart/longsection',  [ChartController::class, 'longSection'])->name('chart.longsection');

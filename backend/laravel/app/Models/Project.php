@@ -11,7 +11,7 @@ class Project extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
+protected $fillable = [
         'user_id',
         'name',
         'location',
@@ -26,15 +26,21 @@ class Project extends Model
         'allowed_tolerance',
         'status',
         'metadata',
+        'network_variance',
+        'network_std_deviation',
+        'network_degrees_of_freedom',
     ];
 
-    protected $casts = [
-        'survey_date'         => 'date',
-        'benchmark_elevation' => 'decimal:4',
-        'closure_error'       => 'decimal:6',
-        'total_distance_km'   => 'decimal:4',
-        'allowed_tolerance'   => 'decimal:6',
-        'metadata'            => 'array',
+protected $casts = [
+        'survey_date'                 => 'date',
+        'benchmark_elevation'         => 'decimal:4',
+        'closure_error'               => 'decimal:6',
+        'total_distance_km'           => 'decimal:4',
+        'allowed_tolerance'           => 'decimal:6',
+        'metadata'                    => 'array',
+        'network_variance'            => 'decimal:12',
+        'network_std_deviation'       => 'decimal:6',
+        'network_degrees_of_freedom'  => 'integer',
     ];
 
     public function user(): BelongsTo
@@ -55,6 +61,35 @@ class Project extends Model
     public function crossSections(): HasMany
     {
         return $this->hasMany(CrossSection::class);
+    }
+
+    public function networkLegs(): HasMany
+    {
+        return $this->hasMany(NetworkLeg::class);
+    }
+
+    public function hasNetworkLegs(): bool
+    {
+        return $this->networkLegs()->exists();
+    }
+
+    public function hasRedundantNetworkObservations(): bool
+    {
+        $legs = $this->networkLegs;
+
+        if ($legs->count() < 2) {
+            return false;
+        }
+
+        $points = collect();
+        foreach ($legs as $leg) {
+            $points->push($leg->from_point);
+            $points->push($leg->to_point);
+        }
+
+        $uniquePoints = $points->unique()->count();
+
+        return $legs->count() >= $uniquePoints;
     }
 
     public function activityLogs(): HasMany

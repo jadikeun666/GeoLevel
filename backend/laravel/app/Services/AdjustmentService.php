@@ -6,16 +6,46 @@ use App\Models\ActivityLog;
 use App\Models\ComputedElevation;
 use App\Models\Project;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class AdjustmentService
 {
     private const SCALE = 10;
 
+    public function __construct(
+        private readonly LeastSquaresAdjustmentService $leastSquaresService,
+    ) {}
+
     // -----------------------------------------------------------------------
     // Instance methods
     // -----------------------------------------------------------------------
 
+    /**
+     * PERUBAHAN: Jika project punya network_legs dengan redundant
+     * observations DAN method == 'least_squares', delegasikan ke
+     * LeastSquaresAdjustmentService (matriks BᵀPB sesungguhnya) alih-alih
+     * formula per-row lama. Project tanpa network_legs (kasus traverse
+     * linear biasa, yang paling umum) TIDAK terpengaruh — tetap pakai
+     * jalur lama persis seperti sebelumnya.
+     */
     public function applyToProject(Project $project, string $method, int $userId): void
+    {
+        if ($method === 'least_squares' && $project->hasRedundantNetworkObservations()) {
+            $this->leastSquaresService->adjustProject($project, $userId);
+            return;
+        }
+
+        $this->applyToProjectLegacy($project, $method, $userId);
+    }
+
+    /**
+     * Method lama applyToProject() — di-rename jadi applyToProjectLegacy().
+     * Dipanggil untuk: method equal/bowditch (selalu), dan method
+     * least_squares pada project TANPA network_legs (fallback, formula
+     * distance-proportional — identik dengan Bowditch, lihat docblock
+     * leastSquaresCorrection() di bawah).
+     */
+    public function applyToProjectLegacy(Project $project, string $method, int $userId): void
     {
         $run = function () use ($project, $method, $userId) {
             $rows = ComputedElevation::where('computed_elevations.project_id', $project->id)
@@ -159,10 +189,16 @@ class AdjustmentService
      * Normal equation: correction_i = -fh * (d_i / Σd)
      *
      * This matches Bowditch for uniform weight distribution. The distinction
-     * becomes meaningful for loop networks with redundant observations (future).
+     * becomes meaningful for loop networks with redundant observations.
      *
      * Reference: SNI 19-6988-2004 §6.3; Mikhail & Gracie, "Introduction to
      * Modern Photogrammetry", least squares leveling adjustment.
+     *
+     * NOTE: Ini adalah fallback formula untuk project TANPA network_legs
+     * (traverse linear sederhana). Untuk jaring dengan redundant
+     * observations (multiple loop/jalur), AdjustmentService::applyToProject()
+     * otomatis delegasikan ke LeastSquaresAdjustmentService yang
+     * mengimplementasikan matriks BᵀPB sesungguhnya — lihat method itu.
      */
     public static function leastSquaresCorrection(
         string $fh,

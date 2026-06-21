@@ -8,6 +8,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
+use Inertia\Inertia;
 
 class AuthenticatedSessionController extends Controller
 {
@@ -28,13 +29,15 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect()->intended(route('projects.index', absolute: false));
     }
 
     /**
      * Destroy an authenticated session.
+     * Menggunakan Inertia::location() agar browser melakukan full page reload
+     * ke landing page — bukan SPA navigation yang membiarkan Vue tetap jalan.
      */
-    public function destroy(Request $request): RedirectResponse
+    public function destroy(Request $request)
     {
         Auth::guard('web')->logout();
 
@@ -42,6 +45,8 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerateToken();
 
-        return redirect('/');
+        // location() memaksa full HTTP redirect, bukan Inertia visit
+        // sehingga welcome.blade.php benar-benar di-render ulang dari server
+        return Inertia::location(route('home'));
     }
 }
