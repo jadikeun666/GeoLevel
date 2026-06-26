@@ -172,6 +172,100 @@
         </div>
       </div>
 
+      <!-- ── Tab: Jaring (Loop Network Least Squares) ───────────── -->
+      <div v-show="tab === 'jaring'" class="px-6 py-5">
+
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-sm font-bold text-slate-700">Jaring Sipat Datar (Redundant)</h2>
+            <p class="text-xs text-slate-400 font-mono mt-0.5">
+              {{ networkLegs.length }} jalur
+              <span v-if="hasRedundancy" class="text-emerald-500">· siap diratakan (kuadrat terkecil)</span>
+              <span v-else class="text-amber-500">· belum ada observasi berlebih</span>
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <button
+              v-if="hasRedundancy"
+              @click="runLeastSquares"
+              :disabled="adjustingNetwork"
+              class="inline-flex items-center gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3.5 py-2 rounded-lg transition-colors">
+              <svg class="w-3.5 h-3.5" :class="adjustingNetwork && 'animate-spin'" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+              {{ adjustingNetwork ? 'Meratakan…' : 'Jalankan Perataan' }}
+            </button>
+            <button @click="showLegForm = true"
+              class="inline-flex items-center gap-1.5 text-xs bg-[#1A1A2E] hover:bg-slate-700 text-white px-3.5 py-2 rounded-lg transition-colors">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+              Tambah Jalur
+            </button>
+          </div>
+        </div>
+
+        <!-- Info box: belum redundant -->
+        <div v-if="!hasRedundancy && networkLegs.length > 0" class="mb-4 flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+          <svg class="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+          <span>Jaring belum punya observasi berlebih (redundant). Tambahkan minimal satu jalur tambahan yang membentuk loop tertutup — misalnya jalur silang antar titik yang sudah ada — sebelum perataan kuadrat terkecil bisa dijalankan.</span>
+        </div>
+
+        <!-- Network stats (setelah adjustment) -->
+        <div v-if="project.network_std_deviation != null" class="mb-4 grid grid-cols-3 gap-3">
+          <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+            <p class="text-[10px] text-slate-400 font-mono uppercase tracking-wide">Standar Deviasi (σ₀)</p>
+            <p class="text-sm font-bold text-slate-800 font-mono mt-1">{{ fmtNum(project.network_std_deviation, 6) }} m</p>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+            <p class="text-[10px] text-slate-400 font-mono uppercase tracking-wide">Variansi (σ₀²)</p>
+            <p class="text-sm font-bold text-slate-800 font-mono mt-1">{{ fmtNum(project.network_variance, 8) }}</p>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+            <p class="text-[10px] text-slate-400 font-mono uppercase tracking-wide">Derajat Kebebasan</p>
+            <p class="text-sm font-bold text-slate-800 font-mono mt-1">{{ project.network_degrees_of_freedom }}</p>
+          </div>
+        </div>
+
+        <!-- Legs table -->
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+          <div class="overflow-x-auto">
+            <table class="min-w-full font-mono text-xs text-slate-700">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                  <th class="px-3 py-2.5 text-left text-slate-600 font-semibold">Dari</th>
+                  <th class="px-3 py-2.5 text-left text-slate-600 font-semibold">Ke</th>
+                  <th class="px-3 py-2.5 text-right text-slate-600 font-semibold">ΔH Ukur</th>
+                  <th class="px-3 py-2.5 text-right text-slate-500 font-medium">Jarak (m)</th>
+                  <th class="px-3 py-2.5 text-right text-slate-600 font-semibold">ΔH Terkoreksi</th>
+                  <th class="px-3 py-2.5 text-right text-slate-500 font-medium">Residual</th>
+                  <th class="px-3 py-2.5 w-8"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr v-for="leg in networkLegs" :key="leg.id" class="group hover:bg-emerald-50/40 transition-colors">
+                  <td class="px-3 py-1.5 font-semibold text-slate-800">{{ leg.from_point }}</td>
+                  <td class="px-3 py-1.5 font-semibold text-slate-800">{{ leg.to_point }}</td>
+                  <td class="px-3 py-1.5 text-right tabular-nums">{{ leg.observed_delta_h }}</td>
+                  <td class="px-3 py-1.5 text-right tabular-nums text-slate-500">{{ leg.distance_m }}</td>
+                  <td class="px-3 py-1.5 text-right tabular-nums" :class="leg.corrected_delta_h != null ? 'text-emerald-600 font-bold' : 'text-slate-300'">
+                    {{ leg.corrected_delta_h ?? '—' }}
+                  </td>
+                  <td class="px-3 py-1.5 text-right tabular-nums text-slate-400">{{ leg.residual ?? '—' }}</td>
+                  <td class="px-3 py-1.5 text-right">
+                    <button @click="deleteLeg(leg.id)"
+                      class="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600 w-6 h-6 flex items-center justify-center rounded">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                  </td>
+                </tr>
+                <tr v-if="networkLegs.length === 0">
+                  <td colspan="7" class="px-4 py-12 text-center text-slate-400">
+                    Belum ada jalur jaring. Tambahkan jalur untuk membentuk loop dengan observasi berlebih.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- ── Tab: Grafik ──────────────────────────────────────── -->
       <div v-show="tab === 'grafik'" class="px-6 py-5 space-y-4">
         <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
@@ -330,6 +424,59 @@
       </Transition>
     </Teleport>
 
+    <!-- ── Network Leg Modal ─────────────────────────────────── -->
+    <Teleport to="body">
+      <Transition enter-active-class="transition duration-150 ease-out" enter-from-class="opacity-0 scale-95" enter-to-class="opacity-100 scale-100"
+                  leave-active-class="transition duration-100 ease-in"  leave-from-class="opacity-100 scale-100" leave-to-class="opacity-0 scale-95">
+        <div v-if="showLegForm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div class="bg-emerald-600 px-6 py-4 flex items-center justify-between">
+              <div>
+                <p class="font-mono text-[10px] text-emerald-100 tracking-widest uppercase mb-0.5">Jaring</p>
+                <h2 class="font-bold text-white">Tambah Jalur</h2>
+              </div>
+              <button @click="showLegForm = false" class="w-8 h-8 flex items-center justify-center rounded-lg text-emerald-200 hover:text-white hover:bg-white/10 transition-colors text-xl">×</button>
+            </div>
+
+            <form @submit.prevent="submitLeg" class="px-6 py-5 space-y-4">
+              <div class="grid grid-cols-2 gap-4">
+                <Field label="Dari Titik" required>
+                  <input v-model="legForm.from_point" type="text" v-bind="fa" placeholder="BM-A" />
+                </Field>
+                <Field label="Ke Titik" required>
+                  <input v-model="legForm.to_point" type="text" v-bind="fa" placeholder="TP-1" />
+                </Field>
+              </div>
+
+              <Field label="Beda Tinggi Terukur — ΔH (m)" required>
+                <input v-model="legForm.observed_delta_h" type="number" step="0.000001" v-bind="fa" placeholder="1.234500" class="font-mono" />
+              </Field>
+
+              <Field label="Jarak (m)" required>
+                <input v-model="legForm.distance_m" type="number" step="0.001" v-bind="fa" placeholder="150.500" class="font-mono" />
+              </Field>
+
+              <Field label="Catatan">
+                <input v-model="legForm.notes" type="text" v-bind="fa" placeholder="Opsional" />
+              </Field>
+
+              <div v-if="legErrors" class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 space-y-1">
+                <p v-for="(msgs, field) in legErrors" :key="field" class="text-xs text-red-700">{{ field }}: {{ msgs[0] }}</p>
+              </div>
+
+              <div class="flex justify-end gap-3 pt-2">
+                <button type="button" @click="showLegForm = false" class="text-sm text-slate-500 hover:text-slate-700 px-4 py-2">Batal</button>
+                <button type="submit" :disabled="submittingLeg"
+                  class="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors">
+                  {{ submittingLeg ? 'Menyimpan…' : 'Simpan Jalur' }}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
   </AppLayout>
 </template>
 
@@ -345,17 +492,20 @@ import CrossSectionChart from '@/Components/CrossSectionChart.vue'
 import ExportButton from '@/Components/ExportButton.vue'
 import Field from '@/Components/Field.vue'
 
+// STEP 4 — props dengan tambahan networkLegs
 const props = defineProps({
   project:      { type: Object, required: true },
   readings:     { type: Array,  default: () => [] },
   elevations:   { type: Array,  default: () => [] },
   activityLogs: { type: Array,  default: () => [] },
+  networkLegs:  { type: Array,  default: () => [] },
 })
 
-// ── Tabs ─────────────────────────────────────────────────────
+// ── Tabs — STEP 1: tambah tab 'jaring' ───────────────────────
 const tabs = [
   { id: 'bacaan',    label: 'Bacaan' },
   { id: 'elevasi',   label: 'Elevasi' },
+  { id: 'jaring',    label: 'Jaring' },
   { id: 'grafik',    label: 'Grafik' },
   { id: 'aktivitas', label: 'Aktivitas' },
 ]
@@ -492,4 +642,61 @@ function formatDatetime(d) {
   return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 function fmtNum(v, d = 4) { return v != null ? Number(v).toFixed(d) : '—' }
+
+// ── Network Legs (Loop Network Least Squares) — STEP 5 ────────
+const networkLegs = ref(props.networkLegs)
+
+const hasRedundancy = computed(() => {
+  if (networkLegs.value.length < 2) return false
+  const points = new Set()
+  networkLegs.value.forEach(l => { points.add(l.from_point); points.add(l.to_point) })
+  return networkLegs.value.length >= points.size
+})
+
+const showLegForm   = ref(false)
+const submittingLeg = ref(false)
+const legErrors     = ref(null)
+const blankLeg = () => ({ from_point: '', to_point: '', observed_delta_h: '', distance_m: '', notes: '' })
+const legForm = ref(blankLeg())
+
+function submitLeg() {
+  submittingLeg.value = true; legErrors.value = null
+  router.post(route('network-legs.store', props.project.id), legForm.value, {
+    onSuccess: () => {
+      showLegForm.value = false
+      legForm.value = blankLeg()
+      refreshNetworkLegs()
+    },
+    onError:   (e) => { legErrors.value = e },
+    onFinish:  () => { submittingLeg.value = false },
+    preserveScroll: true,
+  })
+}
+
+function deleteLeg(id) {
+  if (!confirm('Hapus jalur ini?')) return
+  router.delete(route('network-legs.destroy', { project: props.project.id, leg: id }), {
+    preserveScroll: true,
+    onSuccess: () => refreshNetworkLegs(),
+  })
+}
+
+const adjustingNetwork = ref(false)
+function runLeastSquares() {
+  adjustingNetwork.value = true
+  router.post(route('network-legs.adjust', props.project.id), {}, {
+    preserveScroll: true,
+    onFinish: () => {
+      adjustingNetwork.value = false
+      refreshNetworkLegs()
+    },
+  })
+}
+
+async function refreshNetworkLegs() {
+  try {
+    const { data } = await axios.get(route('network-legs.index', props.project.id))
+    networkLegs.value = data.legs
+  } catch (e) {}
+}
 </script>

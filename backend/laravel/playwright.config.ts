@@ -9,7 +9,8 @@ export default defineConfig({
   reporter: 'list',
 
   use: {
-    baseURL: 'http://geolevel.local',
+    baseURL: 'https://geolevel.local',
+    ignoreHTTPSErrors: true,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     headless: true,

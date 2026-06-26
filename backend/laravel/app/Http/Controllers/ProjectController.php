@@ -55,11 +55,10 @@ class ProjectController extends Controller
 
     /**
      * GET /projects/{project}
-     * Halaman detail: readings, elevasi, activity log.
+     * Halaman detail: readings, elevasi, activity log, network legs.
      *
-     * PERUBAHAN: Tambah pengecekan $request->expectsJson().
-     * Kalau request dari test (getJson) atau axios, return JSON biasa —
-     * bukan Inertia. Ini agar test bisa akses $response->json('readings').
+     * PERUBAHAN: Tambah $networkLegs dari relasi networkLegs() dan
+     * sertakan ke response JSON maupun Inertia::render().
      */
     public function show(Request $request, Project $project): Response|JsonResponse
     {
@@ -68,6 +67,7 @@ class ProjectController extends Controller
         $readings     = $project->readings()->orderBy('sequence_no')->get();
         $elevations   = $project->computedElevations()->orderBy('sequence_no')->get();
         $activityLogs = $project->activityLogs()->latest()->take(50)->get();
+        $networkLegs  = $project->networkLegs()->orderBy('id')->get();
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -75,6 +75,7 @@ class ProjectController extends Controller
                 'readings'     => $readings,
                 'elevations'   => $elevations,
                 'activityLogs' => $activityLogs,
+                'networkLegs'  => $networkLegs,
             ]);
         }
 
@@ -83,6 +84,7 @@ class ProjectController extends Controller
             'readings'     => $readings,
             'elevations'   => $elevations,
             'activityLogs' => $activityLogs,
+            'networkLegs'  => $networkLegs,
         ]);
     }
 
@@ -114,9 +116,6 @@ class ProjectController extends Controller
     /**
      * POST /projects/{project}/calculate
      * Picu ulang perhitungan elevasi secara manual.
-     *
-     * PERUBAHAN: Hapus argumen $userId dari dispatch().
-     * Job sekarang hanya terima $projectId — tidak perlu $userId lagi.
      */
     public function calculate(Request $request, Project $project): RedirectResponse
     {
@@ -130,49 +129,37 @@ class ProjectController extends Controller
     /**
      * POST /projects/{project}/adjust
      * Terapkan metode perataan (equal / bowditch / reset).
-     *
-     * PERUBAHAN 1: Ganti $this->adjuster->apply() → applyToProject().
-     * Method lama bernama apply() tidak ada di AdjustmentService —
-     * nama yang benar adalah applyToProject(). Ini penyebab 500.
-     *
-     * PERUBAHAN 2: Return JSON saat expectsJson() agar test postJson() dapat 200.
-     * Kalau tidak, controller return redirect (302) dan test gagal.
-     *
-     * PERUBAHAN 3: AdjustProjectRequest kini juga allow method='reset' —
-     * sehingga test adjustment_is_reversible_by_zeroing_corrections bisa lolos.
      */
-public function adjust(AdjustProjectRequest $request, Project $project): RedirectResponse|JsonResponse
-{
-    $this->authorize('update', $project);
+    public function adjust(AdjustProjectRequest $request, Project $project): RedirectResponse|JsonResponse
+    {
+        $this->authorize('update', $project);
 
-    $method = $request->validated('method');
+        $method = $request->validated('method');
 
-    // 'reset' ditangani terpisah — bukan applyToProject()
-    if ($method === 'reset') {
-        $this->adjuster->reset(
-            project: $project,
-            userId:  $request->user()->id,
-        );
-    } else {
-        $this->adjuster->applyToProject(
-            project: $project,
-            method:  $method,
-            userId:  $request->user()->id,
-        );
+        // 'reset' ditangani terpisah — bukan applyToProject()
+        if ($method === 'reset') {
+            $this->adjuster->reset(
+                project: $project,
+                userId:  $request->user()->id,
+            );
+        } else {
+            $this->adjuster->applyToProject(
+                project: $project,
+                method:  $method,
+                userId:  $request->user()->id,
+            );
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Perataan berhasil diterapkan.']);
+        }
+
+        return back()->with('flash', ['type' => 'success', 'message' => 'Perataan berhasil diterapkan.']);
     }
-
-    if ($request->expectsJson()) {
-        return response()->json(['message' => 'Perataan berhasil diterapkan.']);
-    }
-
-    return back()->with('flash', ['type' => 'success', 'message' => 'Perataan berhasil diterapkan.']);
-}
 
     /**
      * POST /projects/{project}/adjust/reset
      * Reset semua correction = 0, adjusted_elevation = raw_elevation.
-     *
-     * PERUBAHAN: Return JSON saat expectsJson() sama seperti adjust().
      */
     public function resetAdjustment(Request $request, Project $project): RedirectResponse|JsonResponse
     {

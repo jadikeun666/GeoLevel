@@ -34,9 +34,7 @@ class ReadingController extends Controller
             return response()->json(['data' => $reading], 201);
         }
 
-        return redirect()
-            ->route('projects.show', $project->id)
-            ->with('flash', ['type' => 'success', 'message' => 'Bacaan berhasil ditambahkan.']);
+        return back()->with('flash', ['type' => 'success', 'message' => 'Bacaan berhasil ditambahkan.']);
     }
 
     /**
@@ -57,9 +55,7 @@ class ReadingController extends Controller
             return response()->json(['data' => $reading->fresh()], 200);
         }
 
-        return redirect()
-            ->route('projects.show', $project->id)
-            ->with('flash', ['type' => 'success', 'message' => 'Bacaan berhasil diperbarui.']);
+        return back()->with('flash', ['type' => 'success', 'message' => 'Bacaan berhasil diperbarui.']);
     }
 
     /**
@@ -100,8 +96,6 @@ class ReadingController extends Controller
             return response()->json(null, 204);
         }
 
-        return redirect()
-            ->route('projects.show', $project->id)
-            ->with('flash', ['type' => 'success', 'message' => 'Bacaan berhasil dihapus.']);
+        return back()->with('flash', ['type' => 'success', 'message' => 'Bacaan berhasil dihapus.']);
     }
 }

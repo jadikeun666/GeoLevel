@@ -80,12 +80,21 @@ class NetworkLeastSquaresAdjustmentTest extends TestCase
         NetworkLeg::factory()->create([
             'project_id' => $project->id,
             'from_point' => 'TP-2', 'to_point' => 'BM-A',
-            'observed_delta_h' => '-2.998', 'distance_m' => '100',
+            'observed_delta_h' => '-3.000', 'distance_m' => '100',
         ]);
 
         $this->assertTrue($project->hasRedundantNetworkObservations());
     }
 
+    /**
+     * Loop tertutup A→B→C→A dengan closure PRESISI NOL secara matematis:
+     *   1.000000 + 2.000000 + (-3.000000) = 0.000000
+     *
+     * Ini kasus paling sederhana untuk diverifikasi — karena tidak ada
+     * misclosure sama sekali, hasil least squares (corrected_delta_h)
+     * harus PERSIS SAMA dengan observed_delta_h (residual = 0 untuk
+     * semua leg, karena tidak ada apapun yang perlu dikoreksi).
+     */
     public function test_adjustment_service_delegates_to_least_squares_for_redundant_network(): void
     {
         $user    = User::factory()->create();
@@ -94,17 +103,17 @@ class NetworkLeastSquaresAdjustmentTest extends TestCase
         NetworkLeg::factory()->create([
             'project_id' => $project->id,
             'from_point' => 'BM-A', 'to_point' => 'TP-1',
-            'observed_delta_h' => '1.000', 'distance_m' => '100',
+            'observed_delta_h' => '1.000000', 'distance_m' => '100',
         ]);
         NetworkLeg::factory()->create([
             'project_id' => $project->id,
             'from_point' => 'TP-1', 'to_point' => 'TP-2',
-            'observed_delta_h' => '2.000', 'distance_m' => '100',
+            'observed_delta_h' => '2.000000', 'distance_m' => '100',
         ]);
         NetworkLeg::factory()->create([
             'project_id' => $project->id,
             'from_point' => 'TP-2', 'to_point' => 'BM-A',
-            'observed_delta_h' => '-2.998', 'distance_m' => '100',
+            'observed_delta_h' => '-3.000000', 'distance_m' => '100',
         ]);
 
         $adjuster = $this->app->make(AdjustmentService::class);
@@ -119,14 +128,27 @@ class NetworkLeastSquaresAdjustmentTest extends TestCase
         $this->assertNotNull($project->network_std_deviation);
         $this->assertSame(1, $project->network_degrees_of_freedom); // n=3, u=2 -> dof=1
 
+        // Closure presisi nol → tidak ada apapun yang perlu dikoreksi →
+        // variance dan std deviation harus (mendekati) nol.
+        $this->assertEqualsWithDelta(0.0, (float) $project->network_variance, 0.000001);
+        $this->assertEqualsWithDelta(0.0, (float) $project->network_std_deviation, 0.000001);
+
         // Semua leg harus punya corrected_delta_h terisi
         $legs = $project->networkLegs()->get();
         foreach ($legs as $leg) {
             $this->assertNotNull($leg->corrected_delta_h);
             $this->assertNotNull($leg->residual);
+
+            // Closure presisi nol → corrected harus == observed (tidak ada koreksi)
+            $this->assertEqualsWithDelta(
+                (float) $leg->observed_delta_h,
+                (float) $leg->corrected_delta_h,
+                0.000001
+            );
+            $this->assertEqualsWithDelta(0.0, (float) $leg->residual, 0.000001);
         }
 
-        // Loop closure setelah adjustment harus ≈ 0
+        // Loop closure setelah adjustment harus tetap 0 (sanity check akhir)
         $sumCorrected = $legs->sum(fn ($l) => (float) $l->corrected_delta_h);
         $this->assertEqualsWithDelta(0.0, $sumCorrected, 0.000001);
     }
@@ -169,17 +191,17 @@ class NetworkLeastSquaresAdjustmentTest extends TestCase
         NetworkLeg::factory()->create([
             'project_id' => $project->id,
             'from_point' => 'BM-A', 'to_point' => 'TP-1',
-            'observed_delta_h' => '1.000', 'distance_m' => '100',
+            'observed_delta_h' => '1.000000', 'distance_m' => '100',
         ]);
         NetworkLeg::factory()->create([
             'project_id' => $project->id,
             'from_point' => 'TP-1', 'to_point' => 'TP-2',
-            'observed_delta_h' => '2.000', 'distance_m' => '100',
+            'observed_delta_h' => '2.000000', 'distance_m' => '100',
         ]);
         NetworkLeg::factory()->create([
             'project_id' => $project->id,
             'from_point' => 'TP-2', 'to_point' => 'BM-A',
-            'observed_delta_h' => '-2.998', 'distance_m' => '100',
+            'observed_delta_h' => '-3.000000', 'distance_m' => '100',
         ]);
 
         $response = $this->actingAs($user)

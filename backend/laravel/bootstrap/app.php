@@ -15,7 +15,9 @@ return Application::configure(basePath: dirname(__DIR__))
         EventServiceProvider::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        if (($_SERVER['APP_ENV'] ?? env('APP_ENV')) === 'testing') {
+            $middleware->validateCsrfTokens(except: ['*']);
+        }
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
