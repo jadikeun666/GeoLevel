@@ -68,7 +68,6 @@ class ProjectWorkflowTest extends TestCase
     #[Test]
     public function authenticated_user_can_see_projects_index(): void
     {
-        // Memerlukan resources/views/app.blade.php untuk Inertia render.
         $this->actingAs($this->user)
             ->get(route('projects.index'))
             ->assertOk()
@@ -107,7 +106,6 @@ class ProjectWorkflowTest extends TestCase
     #[Test]
     public function user_can_view_own_project(): void
     {
-        // Memerlukan resources/views/app.blade.php untuk Inertia render.
         $this->actingAs($this->user)
             ->get(route('projects.show', $this->project->id))
             ->assertOk()
@@ -174,9 +172,6 @@ class ProjectWorkflowTest extends TestCase
     #[Test]
     public function user_can_delete_reading_on_draft_project(): void
     {
-        // Buat satu reading — ini adalah satu-satunya reading di project,
-        // sehingga sequence_no-nya adalah yang tertinggi dan delete diizinkan.
-        // Queue::fake() dari setUp() mencegah observer crash saat factory create.
         $reading = Reading::factory()->create([
             'project_id'   => $this->project->id,
             'sequence_no'  => 1,
@@ -191,7 +186,6 @@ class ProjectWorkflowTest extends TestCase
             ->delete(route('readings.destroy', [$this->project->id, $reading->id]))
             ->assertRedirect();
 
-        // Engineering Rule #10: soft delete — row tetap ada, deleted_at di-set
         $this->assertSoftDeleted('readings', ['id' => $reading->id]);
     }
 
@@ -204,7 +198,6 @@ class ProjectWorkflowTest extends TestCase
             ->post(route('projects.calculate', $this->project->id))
             ->assertRedirect();
 
-        // Queue::fake() dari setUp() masih aktif — assertPushed tetap bekerja
         Queue::assertPushed(\App\Jobs\RecalculateSurveyJob::class);
     }
 
@@ -229,48 +222,70 @@ class ProjectWorkflowTest extends TestCase
     // ── Export guard ──────────────────────────────────────────────────────
 
     #[Test]
-    public function export_pdf_returns_error_when_project_not_accepted(): void
+    public function export_pdf_returns_403_when_project_not_accepted(): void
     {
         // project.status = 'draft' dari setUp()
         $this->actingAs($this->user)
             ->get(route('export.pdf', $this->project->id))
-            ->assertJson(['success' => false]);
+            ->assertStatus(403);
     }
 
     #[Test]
-    public function export_pdf_queues_job_when_project_accepted(): void
+    public function export_pdf_returns_file_when_project_accepted(): void
     {
         $this->project->update(['status' => 'accepted']);
 
-        $this->actingAs($this->user)
-            ->get(route('export.pdf', $this->project->id))
-            ->assertJson(['success' => true]);
+        $response = $this->actingAs($this->user)
+            ->get(route('export.pdf', $this->project->id));
 
-        Queue::assertPushed(\App\Jobs\GeneratePdfExportJob::class);
+        $response->assertStatus(200);
+        $this->assertStringContainsString(
+            'pdf',
+            strtolower($response->headers->get('Content-Type') ?? '')
+        );
     }
 
     #[Test]
-    public function export_excel_queues_job_when_project_accepted(): void
+    public function export_excel_returns_file_when_project_accepted(): void
     {
         $this->project->update(['status' => 'accepted']);
 
-        $this->actingAs($this->user)
-            ->get(route('export.excel', $this->project->id))
-            ->assertJson(['success' => true]);
+        $response = $this->actingAs($this->user)
+            ->get(route('export.excel', $this->project->id));
 
-        Queue::assertPushed(\App\Jobs\GenerateExcelExportJob::class);
+        $response->assertStatus(200);
+        $this->assertStringContainsString(
+            'spreadsheet',
+            strtolower($response->headers->get('Content-Type') ?? '')
+        );
     }
 
     #[Test]
-    public function export_csv_queues_job_when_project_accepted(): void
+    public function export_csv_returns_file_when_project_accepted(): void
     {
         $this->project->update(['status' => 'accepted']);
 
-        $this->actingAs($this->user)
-            ->get(route('export.csv', $this->project->id))
-            ->assertJson(['success' => true]);
+        $response = $this->actingAs($this->user)
+            ->get(route('export.csv', $this->project->id));
 
-        Queue::assertPushed(\App\Jobs\GenerateCsvExportJob::class);
+        $response->assertStatus(200);
+        $this->assertStringContainsString(
+            'text/csv',
+            strtolower($response->headers->get('Content-Type') ?? '')
+        );
+    }
+
+    #[Test]
+    public function export_endpoints_never_push_jobs_to_queue(): void
+    {
+        $this->project->update(['status' => 'accepted']);
+        $id = $this->project->id;
+
+        $this->actingAs($this->user)->get(route('export.pdf',   $id));
+        $this->actingAs($this->user)->get(route('export.excel', $id));
+        $this->actingAs($this->user)->get(route('export.csv',   $id));
+
+        Queue::assertNothingPushed();
     }
 
     // ── Chart endpoints ───────────────────────────────────────────────────

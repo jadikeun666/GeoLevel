@@ -71,7 +71,7 @@
             <h2 class="text-sm font-bold text-slate-700">Bacaan Lapangan</h2>
             <p class="text-xs text-slate-400 font-mono mt-0.5">{{ readings.length }} baris · <span :class="invalidBtCount > 0 ? 'text-red-500' : 'text-emerald-500'">{{ invalidBtCount }} deviasi BT</span></p>
           </div>
-          <button @click="showReadingForm = true"
+          <button @click="openReadingForm()"
             class="inline-flex items-center gap-1.5 text-xs bg-[#1A1A2E] hover:bg-slate-700 text-white px-3.5 py-2 rounded-lg transition-colors">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
             Tambah Bacaan
@@ -318,13 +318,17 @@
                 <p class="font-mono text-[10px] text-blue-400 tracking-widest uppercase">Input</p>
                 <h2 class="font-bold text-white">Tambah Bacaan</h2>
               </div>
-              <button @click="showReadingForm = false" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors text-xl">×</button>
+              <button @click="closeReadingForm()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors text-xl">×</button>
             </div>
 
             <form @submit.prevent="submitReading" class="px-6 py-5 space-y-4">
               <div class="grid grid-cols-2 gap-4">
                 <Field label="Nama Titik" required>
-                  <input v-model="readingForm.point_name" type="text" v-bind="fa" placeholder="BM-A / TP-1" />
+                  <input v-model="readingForm.point_name" type="text" v-bind="fa" placeholder="BM-A / TP-1"
+                    :class="readingErrors?.point_name ? 'border-red-400 focus:ring-red-400' : ''" />
+                  <p v-if="readingErrors?.point_name" class="mt-1 text-xs text-red-600">
+                    {{ readingErrors.point_name[0] }}
+                  </p>
                 </Field>
                 <Field label="Tipe Bacaan" required>
                   <select v-model="readingForm.reading_type" v-bind="fa">
@@ -338,13 +342,19 @@
               <!-- BA / BT / BB -->
               <div class="grid grid-cols-3 gap-3">
                 <Field label="BA" required>
-                  <input v-model="readingForm.ba" type="number" step="0.0001" v-bind="fa" placeholder="1.5230" class="font-mono" />
+                  <input v-model="readingForm.ba" type="number" step="0.0001" v-bind="fa" placeholder="1.5230" class="font-mono"
+                    :class="readingErrors?.ba ? 'border-red-400 focus:ring-red-400' : ''" />
+                  <p v-if="readingErrors?.ba" class="mt-1 text-xs text-red-600">{{ readingErrors.ba[0] }}</p>
                 </Field>
                 <Field label="BT" required>
-                  <input v-model="readingForm.bt" type="number" step="0.0001" v-bind="fa" placeholder="1.2100" class="font-mono" />
+                  <input v-model="readingForm.bt" type="number" step="0.0001" v-bind="fa" placeholder="1.2100" class="font-mono"
+                    :class="readingErrors?.bt ? 'border-red-400 focus:ring-red-400' : ''" />
+                  <p v-if="readingErrors?.bt" class="mt-1 text-xs text-red-600">{{ readingErrors.bt[0] }}</p>
                 </Field>
                 <Field label="BB" required>
-                  <input v-model="readingForm.bb" type="number" step="0.0001" v-bind="fa" placeholder="0.8970" class="font-mono" />
+                  <input v-model="readingForm.bb" type="number" step="0.0001" v-bind="fa" placeholder="0.8970" class="font-mono"
+                    :class="readingErrors?.bb ? 'border-red-400 focus:ring-red-400' : ''" />
+                  <p v-if="readingErrors?.bb" class="mt-1 text-xs text-red-600">{{ readingErrors.bb[0] }}</p>
                 </Field>
               </div>
 
@@ -366,12 +376,10 @@
                 <input v-model="readingForm.notes" type="text" v-bind="fa" placeholder="Opsional" />
               </Field>
 
-              <div v-if="readingErrors" class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 space-y-1">
-                <p v-for="(msgs, field) in readingErrors" :key="field" class="text-xs text-red-700">{{ field }}: {{ msgs[0] }}</p>
-              </div>
+
 
               <div class="flex justify-end gap-3 pt-2">
-                <button type="button" @click="showReadingForm = false" class="text-sm text-slate-500 hover:text-slate-700 px-4 py-2">Batal</button>
+                <button type="button" @click="closeReadingForm()" class="text-sm text-slate-500 hover:text-slate-700 px-4 py-2">Batal</button>
                 <button type="submit" :disabled="submittingReading"
                   class="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors">
                   {{ submittingReading ? 'Menyimpan…' : 'Simpan Bacaan' }}
@@ -441,10 +449,16 @@
             <form @submit.prevent="submitLeg" class="px-6 py-5 space-y-4">
               <div class="grid grid-cols-2 gap-4">
                 <Field label="Dari Titik" required>
-                  <input v-model="legForm.from_point" type="text" v-bind="fa" placeholder="BM-A" />
+                  <select v-model="legForm.from_point" v-bind="fa">
+                    <option value="" disabled>-- Pilih titik --</option>
+                    <option v-for="p in uniquePointNames" :key="p" :value="p">{{ p }}</option>
+                  </select>
                 </Field>
                 <Field label="Ke Titik" required>
-                  <input v-model="legForm.to_point" type="text" v-bind="fa" placeholder="TP-1" />
+                  <select v-model="legForm.to_point" v-bind="fa">
+                    <option value="" disabled>-- Pilih titik --</option>
+                    <option v-for="p in uniquePointNames" :key="p" :value="p">{{ p }}</option>
+                  </select>
                 </Field>
               </div>
 
@@ -481,7 +495,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -570,21 +584,77 @@ const readingErrors     = ref(null)
 const blankReading = () => ({ point_name: '', reading_type: 'BS', ba: '', bt: '', bb: '', distance_m: '', notes: '' })
 const readingForm = ref(blankReading())
 
+function openReadingForm() {
+  readingForm.value   = blankReading()
+  readingErrors.value = null
+  showReadingForm.value = true
+}
+function closeReadingForm() {
+  showReadingForm.value = false
+  readingErrors.value   = null
+}
+
 const fa = { class: 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50 placeholder-slate-400 transition-colors' }
 
 function submitReading() {
-  submittingReading.value = true; readingErrors.value = null
-  router.post(route('readings.store', props.project.id), readingForm.value, {
-    onSuccess: () => { showReadingForm.value = false; readingForm.value = blankReading() },
-    onError:   (e) => { readingErrors.value = e },
+  // Validasi frontend — tidak bergantung pada liveBtOk computed
+  // agar guard selalu reliable terlepas dari urutan definisi
+  const ferr = {}
+  if (!readingForm.value.point_name.trim()) ferr.point_name = ['Nama titik wajib diisi']
+
+  const ba = parseFloat(readingForm.value.ba)
+  const bt = parseFloat(readingForm.value.bt)
+  const bb = parseFloat(readingForm.value.bb)
+
+  if (isNaN(ba)) ferr.ba = ['BA wajib diisi']
+  if (isNaN(bt)) ferr.bt = ['BT wajib diisi']
+  if (isNaN(bb)) ferr.bb = ['BB wajib diisi']
+
+  // Cek deviasi BT langsung dari nilai form — tidak pakai liveBtOk.value
+  // agar tidak ada risiko computed belum terupdate saat tombol diklik
+  if (!isNaN(ba) && !isNaN(bt) && !isNaN(bb)) {
+    const btHitung = (ba + bb) / 2
+    const deviasi  = Math.abs(bt - btHitung)
+    if (deviasi > 0.002) {
+      ferr.bt = ['Deviasi BT (' + deviasi.toFixed(4) + ' m) melebihi batas 0.002 m. BT lapangan harus mendekati (BA+BB)/2 = ' + btHitung.toFixed(4) + ' m']
+    }
+  }
+
+  if (Object.keys(ferr).length) {
+    readingErrors.value = ferr
+    return  // form tetap terbuka, tidak ada request ke server
+  }
+
+  submittingReading.value = true
+  readingErrors.value = null
+
+  const payload = {
+    ...readingForm.value,
+    distance_m: readingForm.value.distance_m !== '' ? readingForm.value.distance_m : null,
+    notes:      readingForm.value.notes !== ''      ? readingForm.value.notes      : null,
+  }
+
+  router.post(route('readings.store', { project: props.project.id }), payload, {
+    onSuccess: () => {
+      showReadingForm.value = false
+      readingForm.value     = blankReading()
+      readingErrors.value   = null
+    },
+    onError: (e) => {
+      readingErrors.value = e
+    },
     onFinish:  () => { submittingReading.value = false },
     preserveScroll: true,
+    preserveState:  true,
   })
 }
 
 function deleteReading(id) {
   if (!confirm('Hapus bacaan ini?')) return
-  router.delete(route('readings.destroy', { project: props.project.id, reading: id }), { preserveScroll: true })
+  router.delete(route('readings.destroy', { project: props.project.id, reading: id }), {
+    preserveScroll: true,
+    preserveState:  false,
+  })
 }
 
 // ── Live BT ──────────────────────────────────────────────────
@@ -651,6 +721,13 @@ const hasRedundancy = computed(() => {
   const points = new Set()
   networkLegs.value.forEach(l => { points.add(l.from_point); points.add(l.to_point) })
   return networkLegs.value.length >= points.size
+})
+
+// Daftar nama titik unik dari readings — dipakai sebagai opsi dropdown
+// form Tambah Jalur agar user tidak perlu mengetik manual
+const uniquePointNames = computed(() => {
+  const names = props.readings.map(r => r.point_name).filter(Boolean)
+  return [...new Set(names)]
 })
 
 const showLegForm   = ref(false)
