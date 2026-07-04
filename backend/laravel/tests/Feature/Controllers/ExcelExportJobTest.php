@@ -2,30 +2,20 @@
 
 namespace Tests\Feature\Controllers;
 
-use App\Events\ExportGenerated;
-use App\Jobs\GenerateExcelExportJob;
 use App\Models\ComputedElevation;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Parity tests for GenerateExcelExportJob storage behaviour.
+ * Tests untuk Excel export endpoint (synchronous download).
  *
- * Strategy: mirrors export_file_stored_under_project_exports_directory from
- * ExportControllerTest (PDF). We run the job synchronously via dispatchSync()
- * but do NOT use Excel::fake() — instead we mock the SurveyExport dependency
- * at the Storage level: Excel::store() internally calls Storage::disk('local')
- * ->put(), so Storage::fake('local') is sufficient to intercept the write.
- *
- * The job itself uses Excel::store(..., 'local') which routes through the
- * Storage facade. Under Storage::fake('local') the disk exists but is in-memory,
- * so the file write succeeds without touching the real filesystem.
+ * Controller baru mengembalikan file langsung via Excel::download() —
+ * tidak ada job yang di-dispatch, tidak ada queue.
+ * Response adalah BinaryFileResponse (Content-Type: spreadsheet).
  */
 class ExcelExportJobTest extends TestCase
 {
@@ -38,7 +28,6 @@ class ExcelExportJobTest extends TestCase
     {
         parent::setUp();
 
-        Storage::fake('local');
         Queue::fake();
 
         $this->user = User::factory()->create();
@@ -58,52 +47,58 @@ class ExcelExportJobTest extends TestCase
     // -------------------------------------------------------------------------
 
     #[Test]
-    public function excel_export_on_accepted_project_queues_excel_job(): void
-    {
-        $this->actingAs($this->user)
-             ->getJson("/projects/{$this->project->id}/export/excel")
-             ->assertStatus(200)
-             ->assertJson(['success' => true]);
-
-        Queue::assertPushed(GenerateExcelExportJob::class, function ($job) {
-            return $job->projectId === $this->project->id
-                && $job->userId   === $this->user->id;
-        });
-    }
-
-    #[Test]
-    public function excel_export_queued_response_contains_pending_message(): void
+    public function excel_export_on_accepted_project_returns_200_with_file(): void
     {
         $response = $this->actingAs($this->user)
-             ->getJson("/projects/{$this->project->id}/export/excel")
-             ->assertStatus(200);
+             ->get("/projects/{$this->project->id}/export/excel");
 
-        $this->assertStringContainsString('queued', strtolower($response->json('message')));
+        $response->assertStatus(200);
+        $this->assertStringContainsString(
+            'spreadsheet',
+            strtolower($response->headers->get('Content-Type') ?? '')
+        );
     }
 
     #[Test]
-    public function export_excel_job_failure_logs_to_activity_logs(): void
+    public function excel_export_response_has_attachment_disposition(): void
     {
-        $job = new GenerateExcelExportJob($this->project->id, $this->user->id);
-        $job->failed(new \RuntimeException('simulated disk failure'));
+        $response = $this->actingAs($this->user)
+             ->get("/projects/{$this->project->id}/export/excel");
+
+        $disposition = $response->headers->get('Content-Disposition') ?? '';
+        $this->assertStringContainsString('attachment', $disposition);
+        $this->assertStringContainsString('.xlsx', $disposition);
+    }
+
+    #[Test]
+    public function excel_export_does_not_push_any_job(): void
+    {
+        $this->actingAs($this->user)
+             ->get("/projects/{$this->project->id}/export/excel");
+
+        Queue::assertNothingPushed();
+    }
+
+    #[Test]
+    public function excel_export_logs_activity(): void
+    {
+        $this->actingAs($this->user)
+             ->get("/projects/{$this->project->id}/export/excel");
 
         $this->assertDatabaseHas('activity_logs', [
             'project_id'    => $this->project->id,
             'user_id'       => $this->user->id,
-            'activity_type' => 'job_failed',
+            'activity_type' => 'export_generated',
         ]);
     }
 
     #[Test]
-    public function export_excel_job_failure_deletes_partial_files(): void
+    public function excel_export_on_non_accepted_project_returns_403(): void
     {
-        $partialName = "survey_{$this->project->id}_20991231235959.xlsx";
-        $partialPath = "exports/{$this->project->id}/{$partialName}";
-        Storage::disk('local')->put($partialPath, 'partial content');
+        $draft = Project::factory()->for($this->user)->create(['status' => 'draft']);
 
-        $job = new GenerateExcelExportJob($this->project->id, $this->user->id);
-        $job->failed(new \RuntimeException('simulated disk failure'));
-
-        Storage::disk('local')->assertMissing($partialPath);
+        $this->actingAs($this->user)
+             ->get("/projects/{$draft->id}/export/excel")
+             ->assertStatus(403);
     }
 }

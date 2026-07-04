@@ -14,7 +14,7 @@ class ComputedElevationFactory extends Factory
     {
         return [
             'project_id'          => Project::factory(),
-            'reading_id'          => Reading::factory(),
+            'reading_id'          => null,
             'sequence_no'         => $this->faker->numberBetween(1, 100),
             'point_name'          => $this->faker->bothify('TP-##'),
             'hi'                  => null,

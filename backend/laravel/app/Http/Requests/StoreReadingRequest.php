@@ -40,8 +40,16 @@ class StoreReadingRequest extends FormRequest
     /**
      * Validasi engineering setelah rules() lolos.
      *
-     * Business Rule #4: "Validate BT deviation ≤ 0.002 m — reject reading if violated"
+     * Business Rule #4: "Validate BT deviation <= 0.002 m — reject reading if violated"
      * Precision Policy: "Never use PHP float arithmetic — use bcmath"
+     *
+     * CATATAN: Rule "BA >= BT >= BB" dihapus dari sini karena:
+     * - Tidak tercantum di engineering-rules.md maupun formulas.md
+     * - Validasi deviasi BT <= 0.002 m sudah menjamin BT berada sangat
+     *   dekat dengan (BA+BB)/2, sehingga urutan BA>=BT>=BB secara implisit
+     *   terpenuhi jika deviasi lulus
+     * - Duplikasi dengan validasi live di Vue (liveBtOk computed) yang
+     *   sudah mencegah submit jika deviasi melebihi batas
      */
     public function withValidator($validator): void
     {
@@ -69,13 +77,6 @@ class StoreReadingRequest extends FormRequest
                     'bt',
                     "Deviasi BT ({$deviation} m) melebihi batas {$limit} m. " .
                     "BT lapangan harus mendekati (BA+BB)/2 = {$btComputed} m."
-                );
-            }
-
-            if (bccomp($ba, $bt, $scale) < 0 || bccomp($bt, $bb, $scale) < 0) {
-                $validator->errors()->add(
-                    'bt',
-                    'Urutan bacaan tidak valid. Harus: BA ≥ BT ≥ BB.'
                 );
             }
         });

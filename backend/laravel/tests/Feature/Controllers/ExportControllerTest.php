@@ -1,27 +1,23 @@
 <?php
 
 namespace Tests\Feature\Controllers;
-use PHPUnit\Framework\Attributes\Test;
 
 use App\Models\ComputedElevation;
 use App\Models\Project;
 use App\Models\User;
-use App\Jobs\GenerateExcelExportJob;
-use App\Jobs\GeneratePdfExportJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Feature tests for export endpoints.
+ * Feature tests untuk export endpoints (synchronous download).
  *
- * Business rules verified (from engineering-rules.md / exports.md):
- *   - Export only allowed when project.status = 'accepted'
- *   - Jobs are queued (never run synchronously)
- *   - Correct API response shape for pending, forbidden, and available states
- *   - Output stored under storage/app/exports/{project_id}/
- *   - CSV, Excel, PDF endpoints each guard the status
+ * Controller baru mengembalikan file langsung — tidak ada queue, tidak ada JSON.
+ * PDF   → Response (Content-Type: application/pdf)
+ * Excel → BinaryFileResponse (Content-Type: spreadsheet)
+ * CSV   → StreamedResponse (Content-Type: text/csv)
+ * 403   → abort(403) ketika status bukan accepted
  */
 class ExportControllerTest extends TestCase
 {
@@ -37,7 +33,6 @@ class ExportControllerTest extends TestCase
     {
         parent::setUp();
         Queue::fake();
-        Storage::fake('local');
 
         $this->user = User::factory()->create();
 
@@ -52,35 +47,42 @@ class ExportControllerTest extends TestCase
     // ---------------------------------------------------------------------------
 
     #[Test]
-    public function pdf_export_on_accepted_project_queues_job_and_returns_200(): void
+    public function pdf_export_on_accepted_project_returns_200_with_pdf(): void
     {
-        $this->actingAs($this->user)
-             ->getJson("/projects/{$this->acceptedProject->id}/export/pdf")
-             ->assertStatus(200)
-             ->assertJson(['success' => true]);
+        $response = $this->actingAs($this->user)
+             ->get("/projects/{$this->acceptedProject->id}/export/pdf");
 
-        Queue::assertPushed(GeneratePdfExportJob::class);
+        $response->assertStatus(200);
+        $this->assertStringContainsString(
+            'pdf',
+            strtolower($response->headers->get('Content-Type') ?? '')
+        );
     }
 
     #[Test]
-    public function pdf_export_on_draft_project_returns_403_with_correct_message(): void
+    public function pdf_export_response_has_attachment_disposition(): void
+    {
+        $response = $this->actingAs($this->user)
+             ->get("/projects/{$this->acceptedProject->id}/export/pdf");
+
+        $disposition = $response->headers->get('Content-Disposition') ?? '';
+        $this->assertStringContainsString('attachment', $disposition);
+        $this->assertStringContainsString('.pdf', $disposition);
+    }
+
+    #[Test]
+    public function pdf_export_on_draft_project_returns_403(): void
     {
         $this->actingAs($this->user)
-             ->getJson("/projects/{$this->draftProject->id}/export/pdf")
-             ->assertStatus(403)
-             ->assertJson([
-                 'success' => false,
-                 'message' => 'Export not allowed. Survey status must be accepted.',
-             ]);
-
-        Queue::assertNotPushed(GeneratePdfExportJob::class);
+             ->get("/projects/{$this->draftProject->id}/export/pdf")
+             ->assertStatus(403);
     }
 
     #[Test]
     public function pdf_export_on_calculated_project_is_forbidden(): void
     {
         $this->actingAs($this->user)
-             ->getJson("/projects/{$this->calculatedProject->id}/export/pdf")
+             ->get("/projects/{$this->calculatedProject->id}/export/pdf")
              ->assertStatus(403);
     }
 
@@ -88,8 +90,30 @@ class ExportControllerTest extends TestCase
     public function pdf_export_on_rejected_project_is_forbidden(): void
     {
         $this->actingAs($this->user)
-             ->getJson("/projects/{$this->rejectedProject->id}/export/pdf")
+             ->get("/projects/{$this->rejectedProject->id}/export/pdf")
              ->assertStatus(403);
+    }
+
+    #[Test]
+    public function pdf_export_does_not_push_any_job(): void
+    {
+        $this->actingAs($this->user)
+             ->get("/projects/{$this->acceptedProject->id}/export/pdf");
+
+        Queue::assertNothingPushed();
+    }
+
+    #[Test]
+    public function pdf_export_logs_activity(): void
+    {
+        $this->actingAs($this->user)
+             ->get("/projects/{$this->acceptedProject->id}/export/pdf");
+
+        $this->assertDatabaseHas('activity_logs', [
+            'project_id'    => $this->acceptedProject->id,
+            'user_id'       => $this->user->id,
+            'activity_type' => 'export_generated',
+        ]);
     }
 
     // ---------------------------------------------------------------------------
@@ -97,14 +121,16 @@ class ExportControllerTest extends TestCase
     // ---------------------------------------------------------------------------
 
     #[Test]
-    public function excel_export_on_accepted_project_queues_job_and_returns_200(): void
+    public function excel_export_on_accepted_project_returns_200_with_file(): void
     {
-        $this->actingAs($this->user)
-             ->getJson("/projects/{$this->acceptedProject->id}/export/excel")
-             ->assertStatus(200)
-             ->assertJson(['success' => true]);
+        $response = $this->actingAs($this->user)
+             ->get("/projects/{$this->acceptedProject->id}/export/excel");
 
-        Queue::assertPushed(GenerateExcelExportJob::class);
+        $response->assertStatus(200);
+        $this->assertStringContainsString(
+            'spreadsheet',
+            strtolower($response->headers->get('Content-Type') ?? '')
+        );
     }
 
     #[Test]
@@ -112,11 +138,9 @@ class ExportControllerTest extends TestCase
     {
         foreach ([$this->draftProject, $this->calculatedProject, $this->rejectedProject] as $project) {
             $this->actingAs($this->user)
-                 ->getJson("/projects/{$project->id}/export/excel")
-                 ->assertStatus(403, "Expected 403 for status={$project->status}");
+                 ->get("/projects/{$project->id}/export/excel")
+                 ->assertStatus(403);
         }
-
-        Queue::assertNotPushed(GenerateExcelExportJob::class);
     }
 
     // ---------------------------------------------------------------------------
@@ -124,56 +148,51 @@ class ExportControllerTest extends TestCase
     // ---------------------------------------------------------------------------
 
     #[Test]
-    public function csv_export_on_accepted_project_returns_200_with_file_url(): void
+    public function csv_export_on_accepted_project_returns_200_with_csv(): void
     {
-        // CSV is generated synchronously (lightweight) but still queued per architecture
         $response = $this->actingAs($this->user)
-                         ->getJson("/projects/{$this->acceptedProject->id}/export/csv")
-                         ->assertStatus(200)
-                         ->assertJson(['success' => true]);
+             ->get("/projects/{$this->acceptedProject->id}/export/csv");
 
-        // Response must contain a URL to the export file
-        $this->assertNotEmpty($response->json('data.url'));
+        $response->assertStatus(200);
+        $this->assertStringContainsString(
+            'text/csv',
+            strtolower($response->headers->get('Content-Type') ?? '')
+        );
+    }
+
+    #[Test]
+    public function csv_export_response_has_attachment_disposition(): void
+    {
+        $response = $this->actingAs($this->user)
+             ->get("/projects/{$this->acceptedProject->id}/export/csv");
+
+        $disposition = $response->headers->get('Content-Disposition') ?? '';
+        $this->assertStringContainsString('attachment', $disposition);
+        $this->assertStringContainsString('.csv', $disposition);
     }
 
     #[Test]
     public function csv_export_on_non_accepted_project_returns_403(): void
     {
         $this->actingAs($this->user)
-             ->getJson("/projects/{$this->draftProject->id}/export/csv")
-             ->assertStatus(403)
-             ->assertJson(['success' => false]);
+             ->get("/projects/{$this->draftProject->id}/export/csv")
+             ->assertStatus(403);
     }
 
     // ---------------------------------------------------------------------------
-    // Queued response shape
+    // No queue
     // ---------------------------------------------------------------------------
 
     #[Test]
-    public function queued_export_returns_pending_message(): void
+    public function export_endpoints_never_push_jobs_to_queue(): void
     {
-        $response = $this->actingAs($this->user)
-                         ->getJson("/projects/{$this->acceptedProject->id}/export/pdf")
-                         ->assertStatus(200);
+        $id = $this->acceptedProject->id;
 
-        $this->assertStringContainsString('queued', strtolower($response->json('message')));
-    }
+        $this->actingAs($this->user)->get("/projects/{$id}/export/pdf");
+        $this->actingAs($this->user)->get("/projects/{$id}/export/excel");
+        $this->actingAs($this->user)->get("/projects/{$id}/export/csv");
 
-    // ---------------------------------------------------------------------------
-    // File storage path
-    // ---------------------------------------------------------------------------
-
-    #[Test]
-    public function export_file_stored_under_project_exports_directory(): void
-    {
-        // Simulate job execution to verify storage path
-        $job = new GeneratePdfExportJob($this->acceptedProject->id, $this->user->id);
-        $job->handle();
-
-        $expectedDir = "exports/{$this->acceptedProject->id}";
-        $files = Storage::disk('local')->files($expectedDir);
-
-        $this->assertNotEmpty($files, "Expected export file in {$expectedDir}");
+        Queue::assertNothingPushed();
     }
 
     // ---------------------------------------------------------------------------
@@ -193,11 +212,9 @@ class ExportControllerTest extends TestCase
         $other = User::factory()->create();
 
         $this->actingAs($other)
-             ->getJson("/projects/{$this->acceptedProject->id}/export/pdf")
+             ->get("/projects/{$this->acceptedProject->id}/export/pdf")
              ->assertStatus(403);
     }
-
-
 
     // ---------------------------------------------------------------------------
     // Helper
@@ -214,7 +231,6 @@ class ExportControllerTest extends TestCase
             'allowed_tolerance'   => $status === 'accepted' ? '0.002452' : null,
         ]);
 
-        // Seed minimal computed elevations so export has data to work with
         if ($status === 'accepted') {
             ComputedElevation::factory()->count(6)->for($project)->create();
         }
