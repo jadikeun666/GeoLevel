@@ -1,8 +1,8 @@
 <?php
 
 namespace Tests\Feature\Api;
-use PHPUnit\Framework\Attributes\Test;
 
+use PHPUnit\Framework\Attributes\Test;
 use App\Models\ComputedElevation;
 use App\Models\Project;
 use App\Models\Reading;
@@ -15,12 +15,10 @@ use Tests\TestCase;
  *
  * POST /projects/{id}/adjust
  *
- * Verifies:
- *   - equal distribution produces correct adjusted_elevation (canonical dataset)
- *   - bowditch produces distance-proportional corrections
- *   - adjustments are reversible (correction = 0 restores raw)
- *   - raw readings table is never touched
- *   - correct status transition after adjustment
+ * Uses the canonical dataset from docs/formulas.md seeded directly into
+ * computed_elevations. Readings are inserted with withoutEvents() so
+ * ReadingObserver / RecalculateSurveyJob does NOT fire and overwrite the
+ * carefully seeded raw_elevation values.
  */
 class AdjustmentEndpointTest extends TestCase
 {
@@ -47,12 +45,12 @@ class AdjustmentEndpointTest extends TestCase
             'total_distance_km'   => '0.3756',
         ]);
 
-        $this->seedCanonicalComputedElevations();
+        $this->seedCanonicalData();
     }
 
-    // ---------------------------------------------------------------------------
-    // Equal distribution — canonical values
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // Equal distribution — canonical values from docs/formulas.md
+    // -------------------------------------------------------------------------
 
     #[Test]
     public function equal_adjustment_produces_correct_adjusted_elevation_for_tp1(): void
@@ -101,24 +99,21 @@ class AdjustmentEndpointTest extends TestCase
         $this->assertEqualsWithDelta(-0.401000,  (float) $bmb->correction,         self::DELTA_6);
     }
 
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
     // Reversibility
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
 
     #[Test]
     public function adjustment_is_reversible_by_zeroing_corrections(): void
     {
-        // Apply adjustment
         $this->actingAs($this->user)
              ->postJson("/projects/{$this->project->id}/adjust", ['method' => 'equal'])
              ->assertStatus(200);
 
-        // Zero all corrections via a second call (or via direct reset)
         $this->actingAs($this->user)
              ->postJson("/projects/{$this->project->id}/adjust", ['method' => 'reset'])
              ->assertStatus(200);
 
-        // adjusted_elevation must equal raw_elevation for all rows
         $rows = ComputedElevation::where('project_id', $this->project->id)->get();
 
         foreach ($rows as $row) {
@@ -126,15 +121,15 @@ class AdjustmentEndpointTest extends TestCase
                 (float) $row->raw_elevation,
                 (float) $row->adjusted_elevation,
                 self::DELTA_4,
-                "adjusted_elevation must equal raw_elevation after reset for point {$row->point_name}"
+                "adjusted_elevation must equal raw_elevation after reset for {$row->point_name}"
             );
             $this->assertEqualsWithDelta(0.0, (float) $row->correction, self::DELTA_6);
         }
     }
 
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
     // Raw readings untouched
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
 
     #[Test]
     public function adjustment_never_modifies_readings_table(): void
@@ -156,9 +151,9 @@ class AdjustmentEndpointTest extends TestCase
         $this->assertEquals($originalReadings, $afterReadings, 'readings table must not be mutated');
     }
 
-    // ---------------------------------------------------------------------------
-    // Method validation
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // Validation
+    // -------------------------------------------------------------------------
 
     #[Test]
     public function invalid_adjustment_method_returns_422(): void
@@ -177,9 +172,9 @@ class AdjustmentEndpointTest extends TestCase
              ->assertStatus(200);
     }
 
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
     // Authorisation
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
 
     #[Test]
     public function unauthenticated_user_cannot_adjust(): void
@@ -198,31 +193,24 @@ class AdjustmentEndpointTest extends TestCase
              ->assertStatus(403);
     }
 
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
     // Seed helpers
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
 
-    private function seedCanonicalComputedElevations(): void
+    /**
+     * Seed canonical readings + computed_elevations from docs/formulas.md.
+     *
+     * Order is critical:
+     *   1. Readings inserted first (withoutEvents) → provides valid reading_id FKs.
+     *   2. ComputedElevations inserted second, each referencing its paired reading.
+     *
+     * withoutEvents() prevents ReadingObserver from firing RecalculateSurveyJob,
+     * which would wipe and rebuild computed_elevations from scratch and replace
+     * these carefully seeded canonical values.
+     */
+    private function seedCanonicalData(): void
     {
-        // Canonical FS/turning points — these are the rows that receive corrections
-        $rows = [
-            ['sequence_no' => 1, 'point_name' => 'BM-A', 'raw_elevation' => '100.0000', 'cumulative_distance' => '0'],
-            ['sequence_no' => 2, 'point_name' => 'TP-1', 'raw_elevation' => '100.0350', 'cumulative_distance' => '125.2'],
-            ['sequence_no' => 3, 'point_name' => 'TP-1', 'raw_elevation' => '100.0350', 'cumulative_distance' => '125.2'],
-            ['sequence_no' => 4, 'point_name' => 'TP-2', 'raw_elevation' => '100.2580', 'cumulative_distance' => '250.4'],
-            ['sequence_no' => 5, 'point_name' => 'TP-2', 'raw_elevation' => '100.2580', 'cumulative_distance' => '250.4'],
-            ['sequence_no' => 6, 'point_name' => 'BM-B', 'raw_elevation' => '100.4010', 'cumulative_distance' => '375.6'],
-        ];
-
-        foreach ($rows as $row) {
-            ComputedElevation::factory()->for($this->project)->create(array_merge($row, [
-                'correction'         => '0',
-                'adjusted_elevation' => $row['raw_elevation'],
-            ]));
-        }
-
-        // Seed corresponding readings so the "never mutate readings" assertion works
-        $readingData = [
+        $readingDefs = [
             ['sequence_no' => 1, 'point_name' => 'BM-A', 'reading_type' => 'BS', 'ba' => '1.5230', 'bt' => '1.2100', 'bb' => '0.8970'],
             ['sequence_no' => 2, 'point_name' => 'TP-1', 'reading_type' => 'FS', 'ba' => '1.4870', 'bt' => '1.1750', 'bb' => '0.8630'],
             ['sequence_no' => 3, 'point_name' => 'TP-1', 'reading_type' => 'BS', 'ba' => '1.6210', 'bt' => '1.3050', 'bb' => '0.9890'],
@@ -231,9 +219,38 @@ class AdjustmentEndpointTest extends TestCase
             ['sequence_no' => 6, 'point_name' => 'BM-B', 'reading_type' => 'FS', 'ba' => '1.4120', 'bt' => '1.1000', 'bb' => '0.7880'],
         ];
 
-        foreach ($readingData as $data) {
-            Reading::factory()->for($this->project)->create($data);
+        $elevationDefs = [
+            ['sequence_no' => 1, 'point_name' => 'BM-A', 'raw_elevation' => '100.0000', 'cumulative_distance' => '0.000'],
+            ['sequence_no' => 2, 'point_name' => 'TP-1', 'raw_elevation' => '100.0350', 'cumulative_distance' => '125.200'],
+            ['sequence_no' => 3, 'point_name' => 'TP-1', 'raw_elevation' => '100.0350', 'cumulative_distance' => '125.200'],
+            ['sequence_no' => 4, 'point_name' => 'TP-2', 'raw_elevation' => '100.2580', 'cumulative_distance' => '250.400'],
+            ['sequence_no' => 5, 'point_name' => 'TP-2', 'raw_elevation' => '100.2580', 'cumulative_distance' => '250.400'],
+            ['sequence_no' => 6, 'point_name' => 'BM-B', 'raw_elevation' => '100.4010', 'cumulative_distance' => '375.600'],
+        ];
+
+        // Step 1: insert readings without triggering the observer.
+        $readingIds = [];
+        Reading::withoutEvents(function () use ($readingDefs, &$readingIds) {
+            foreach ($readingDefs as $def) {
+                $reading = Reading::factory()->for($this->project)->create($def);
+                $readingIds[$def['sequence_no']] = $reading->id;
+            }
+        });
+
+        // Step 2: insert computed_elevations referencing the real reading IDs.
+        // No observer concern here — ComputedElevation has no observer.
+        foreach ($elevationDefs as $def) {
+            ComputedElevation::create([
+                'project_id'          => $this->project->id,
+                'reading_id'          => $readingIds[$def['sequence_no']],
+                'sequence_no'         => $def['sequence_no'],
+                'point_name'          => $def['point_name'],
+                'hi'                  => null,
+                'raw_elevation'       => $def['raw_elevation'],
+                'correction'          => '0.000000',
+                'adjusted_elevation'  => $def['raw_elevation'],
+                'cumulative_distance' => $def['cumulative_distance'],
+            ]);
         }
     }
-    
 }

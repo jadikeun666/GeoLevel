@@ -3,6 +3,7 @@
 namespace App\Exports\Sheets;
 
 use App\Models\Project;
+use Illuminate\Support\Enumerable;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithTitle;
@@ -18,7 +19,7 @@ class KoreksiSheet implements FromCollection, WithHeadings, WithTitle
         return ['No Urut', 'Titik', 'Elevasi Sementara', 'Koreksi', 'Elevasi Tetap'];
     }
 
-    public function collection()
+    public function collection(): Enumerable
     {
         return $this->project->computedElevations()
             ->orderBy('sequence_no')

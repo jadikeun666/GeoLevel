@@ -15,12 +15,16 @@ class ComputedElevationFactory extends Factory
         return [
             'project_id' => Project::factory(),
 
+            // reading_id resolved via closure so the Reading is created with
+            // the same project_id that was resolved for this ComputedElevation,
+            // and withoutEvents() prevents ReadingObserver from firing
+            // RecalculateSurveyJob during factory setup.
             'reading_id' => function (array $attributes) {
-                return Reading::withoutEvents(function () use ($attributes) {
-                    return Reading::factory()->create([
+                return Reading::withoutEvents(
+                    fn () => Reading::factory()->create([
                         'project_id' => $attributes['project_id'],
-                    ])->id;
-                });
+                    ])->id
+                );
             },
 
             'sequence_no'         => $this->faker->unique()->numberBetween(1, 999),

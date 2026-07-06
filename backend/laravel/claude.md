@@ -11,21 +11,55 @@ raw field readings → corrected elevations → charts → PDF field book.
 
 | Layer        | Technology                        |
 | ------------ | --------------------------------- |
-| Backend      | Laravel 11 (PHP 8.3)             |
+| Backend      | Laravel 11 (PHP 8.5.4)           |
 | Database     | PostgreSQL 16                    |
 | Frontend     | Inertia.js + Vue 3 + Vite        |
 | UI Library   | Tailwind CSS v3                  |
 | Charts       | Chart.js (via vue-chartjs)       |
 | PDF Export   | DomPDF (barryvdh/laravel-dompdf) |
 | Excel Export | Maatwebsite Laravel Excel        |
-| Auth         | Laravel Breeze                   |
+| Auth         | Laravel Breeze (Blade stack)     |
 | Queue        | Laravel Queue (database driver)  |
+| Web Server   | Nginx 1.28.3 + PHP 8.5-FPM      |
+| Process Mgr  | Supervisor 4.3.0                 |
 
-> Note: dev environment runs PHP 8.5.4 (not 8.3 as documented). This works
-> for the current stack since `maatwebsite/excel` is already installed and
-> wired — only a *future* `composer update` of that package would hit the
-> known `phpoffice/phpspreadsheet` PHP 8.5 incompatibility. No action needed
-> unless that package needs upgrading.
+> Note: PHP 8.5.4 on Ubuntu 25.04 (resolute). Auth uses Breeze Blade stack
+> (not Inertia) — login/register pages are standard Blade views, all other
+> pages use Inertia + Vue 3. This is intentional and working correctly.
+> Do NOT upgrade `maatwebsite/excel` — known phpoffice/phpspreadsheet
+> incompatibility with PHP 8.5.
+
+## Production Environment
+
+| Item | Value |
+| ---- | ----- |
+| OS | Ubuntu 25.04 (resolute) via WSL2 |
+| URL | https://geolevel.local |
+| WSL IP | 172.19.176.181 (changes on Windows restart — run `bash ~/update-hosts.sh`) |
+| Project path | `/home/ciko/workspace/geolevel/backend/laravel` |
+| Nginx config | `/etc/nginx/sites-available/geolevel` (HTTP→HTTPS redirect + TLS) |
+| SSL cert | `/etc/ssl/geolevel/geolevel.local.crt` (self-signed, valid 10 tahun, trusted di Windows) |
+| Supervisor configs | `/etc/supervisor/conf.d/geolevel-worker.conf` + `geolevel-scheduler.conf` |
+| Queue workers | 2 processes (`geolevel-worker:geolevel-worker_00/01`) |
+| Scheduler | 1 process (`geolevel-scheduler`) |
+
+### Production commands
+```bash
+# Status semua service
+sudo supervisorctl status
+
+# Restart worker setelah update kode
+sudo supervisorctl restart geolevel-worker:*
+
+# Update hosts file jika IP WSL berubah (jalankan setiap buka WSL)
+bash ~/update-hosts.sh
+
+# Deploy update (build + cache + migrate + restart worker)
+bash ~/deploy-update.sh
+
+# Log worker
+tail -f /home/ciko/workspace/geolevel/backend/laravel/storage/logs/worker.log
+```
 
 ---
 
@@ -45,7 +79,7 @@ raw field readings → corrected elevations → charts → PDF field book.
 - `ReadingObserver` — dispatches `RecalculateSurveyJob` on saved/updated/deleted
 - `RecalculateSurveyJob` — queued, with `failed()` handler
 - `ProjectController` — full CRUD + adjust + adjust-reset + calculate
-- `ReadingController` — full CRUD
+- `ReadingController` — full CRUD + sequence_no renumber after delete
 - `AdjustmentService` — equal, bowditch, least_squares (distance-weighted normal equations)
 - All Events: `SurveyRecalculated`, `ClosureChecked`, `AdjustmentApplied`, `ExportGenerated`
 - All Listeners: `RunClosureCheck`, `LogClosureResult`, `LogAdjustmentApplied`, `LogExportGenerated`
@@ -69,14 +103,14 @@ raw field readings → corrected elevations → charts → PDF field book.
   - `ExportButton.vue`, `StatusPill.vue`, `TabBtn.vue`, `Field.vue`
   - `Pages/Projects/Index.vue` — listing, search/filter by name+location+status,
     create modal, edit modal, delete confirm modal, least_squares option exposed
-  - `Pages/Projects/Show.vue` — tabs (Bacaan/Elevasi/Grafik/Aktivitas), reading
-    CRUD modal with live BT validation preview, adjustment modal, recalculate button,
-    chart fetch via `chart.longsection` / `chart.crosssection` routes
+  - `Pages/Projects/Show.vue` — tabs (Bacaan/Elevasi/Grafik/Aktivitas/Jaring), reading
+    CRUD modal dengan live BT validation preview + inline error per field,
+    adjustment modal, recalculate button, chart fetch, network legs CRUD
 - `VisualizationService` — `longSection`, `crossSection`, `crossSectionStations`
 - `ChartController` — wired to `VisualizationService`, handles `?station=` query param
 - `CrossSection` model — `HasFactory` trait added, `$fillable`, `$casts`, `project()` relation
 - `CrossSectionFactory` — default state with `station_name`, `station_distance`, `offsets` JSON array
-- Full test suite: **OK (171 tests, 412 assertions)** — zero failures
+- Full test suite: **OK (185 tests, 484 assertions)** — zero failures
 
 ### 🔄 In Progress
 - (none)
@@ -147,10 +181,196 @@ Read the relevant doc before implementing any feature:
 |                 |                                      | single open traverse; distinct for loop  |
 |                 |                                      | networks with redundant obs (future)     |
 
+---
+
+## Known Fixes Applied
+
+### Tailwind CSS tidak men-scan Vue components (FIXED)
+`tailwind.config.js` awalnya hanya scan `.blade.php` — semua class Tailwind
+di file `.vue` diabaikan saat `npm run build`, menyebabkan tampilan tanpa styling.
+
+Fix — tambahkan Vue dan JS ke `content` array:
+```js
+content: [
+    './vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php',
+    './storage/framework/views/*.php',
+    './resources/views/**/*.blade.php',
+    './resources/js/**/*.vue',   // ← wajib ada
+    './resources/js/**/*.js',    // ← wajib ada
+],
+```
+
+### Supervisor `numprocs > 1` butuh `process_name` (FIXED)
+**Gejala:** `CANT_REREAD: %(process_num) must be present within process_name when numprocs > 1`
+**Fix:** Config worker dengan `numprocs=2` harus menyertakan:
+```ini
+process_name=%(program_name)s_%(process_num)02d
+```
+
+### Show.vue — Reading form bugs (FIXED sesi 2026-06-26)
+
+**Bug 1 — Tambah bacaan tidak bisa lebih dari 10 / field kosong lolos:**
+- `distance_m: ''` dan `notes: ''` dikirim sebagai string kosong — backend
+  Laravel menolak karena rule `numeric` pada string kosong.
+- Fix: sanitasi payload sebelum submit, konversi string kosong ke `null`.
+
+**Bug 2 — Tombol hapus tidak berfungsi / data tidak terhapus:**
+- `router.delete` tidak punya `only` option — Inertia full reload tapi flash
+  error dari backend tidak ter-handle di Vue.
+- Fix: tambah `only` + `onError` handler di `deleteReading()`.
+
+**Bug 3 — Kolom jarak kosong (tidak tampil otomatis):**
+- `distance_computed` dari PostgreSQL generated column selalu hadir sebagai
+  `"0.000"` string — kondisi `!= null` selalu `true`, sehingga tidak jatuh
+  ke fallback perhitungan Vue.
+- Fix: fungsi `displayDistance(r)` yang parse dan validasi nilai (`> 0`)
+  sebelum ditampilkan, dengan fallback `(BA−BB)×100` jika keduanya nol/kosong.
+
+**Bug 4 — sequence_no berantakan setelah hapus:**
+- `LevelingCalculationService` mengambil `sequence_no` langsung dari DB
+  tanpa renumber — setelah hapus no.6, tersisa gap `1,2,3,4,5,7,8,9`.
+- Fix: `ReadingController::destroy` melakukan renumber dalam satu
+  `DB::transaction` bersama soft delete, menggunakan `DB::table` (bukan
+  Eloquent) agar tidak trigger observer berkali-kali.
+
+**Bug 5 — Error validasi tidak muncul di modal / form tertutup saat input salah:**
+- `router.post` dengan `only: [...]` menyebabkan Inertia partial reload —
+  `errors` dari Laravel tidak ikut dalam response, `onError` tidak dipanggil.
+- Fix: hapus `only` dari `submitReading` agar full response termasuk errors.
+
+**Bug 6 — Rule `BA ≥ BT ≥ BB` memblok input valid:**
+- `StoreReadingRequest::withValidator` punya rule urutan yang tidak ada di
+  `engineering-rules.md` dan memblok input lapangan yang sah.
+- Fix: hapus rule tersebut — satu-satunya validasi engineering yang wajib
+  adalah deviasi BT ≤ 0.002 m.
+
+**Bug 7 — Guard `liveBtOk` tidak reliable saat tombol diklik:**
+- Validasi bergantung pada `liveBtOk.value` (Vue computed) yang bisa tidak
+  sinkron dengan nilai form saat tombol diklik.
+- Fix: hitung deviasi BT langsung dari nilai form di `submitReading()` tanpa
+  bergantung computed — `const deviasi = Math.abs(bt - (ba+bb)/2)`.
+
+**Bug 8 — Error inline tidak muncul untuk field BA, BT, BB:**
+- Hanya `point_name` yang punya `<p v-if="readingErrors?.point_name">`.
+- Fix: tambah `:class` border merah dan `<p v-if>` error inline di bawah
+  setiap input BA, BT, BB — konsisten dengan pola `point_name`.
+
+**Bug 9 — Form Tambah Jalur: `dari_titik`/`ke_titik` input teks bebas:**
+- User harus mengetik manual nama titik yang sudah ada di readings.
+- Fix: ganti `<input type="text">` dengan `<select>` + computed
+  `uniquePointNames` yang mengambil `point_name` unik dari `props.readings`.
+
+### Pola patch file Show.vue
+File Show.vue pakai Windows line endings (`\r\n`). Semua patch harus lewat
+python3 dengan `raw.replace(b'\r\n', b'\n')` sebelum string matching, lalu
+simpan dengan `newline='\n'`. Jangan pakai `str_replace` tool langsung.
+
+---
+
+## Show.vue — Behaviour Contracts (penting untuk debugging)
+
+### submitReading()
+- Validasi frontend DULU sebelum kirim ke server (tidak bergantung `liveBtOk.value`)
+- Hitung deviasi BT langsung: `Math.abs(bt - (ba+bb)/2) > 0.002` → blok
+- Jika ada error frontend → set `readingErrors.value`, `return` — form tetap terbuka
+- Sanitasi payload: `distance_m` dan `notes` string kosong → `null`
+- Tidak pakai `only` agar `errors` Laravel sampai ke `onError`
+- `onSuccess` → tutup modal + reset form
+- `onError` → set `readingErrors.value`, modal tetap terbuka
+
+### deleteReading()
+- Pakai `only: ['readings', 'elevations', 'project', 'activityLogs']`
+- `onError` → alert pesan error (misal hapus diblok karena status accepted)
+
+### displayDistance(r)
+- Prioritas: `distance_m` manual (> 0) → `distance_computed` DB (> 0) → hitung Vue `(BA−BB)×100`
+- Parse dengan `parseFloat` dan cek `> 0` — jangan cek `!= null` saja
+
+### uniquePointNames (computed)
+- Deduplikasi `point_name` dari `props.readings` — dipakai di dropdown form Tambah Jalur
+
+---
+
+## Seeder — Canonical Survey Data
+
+`database/seeders/CanonicalSurveySeeder.php` — dipanggil dari `DatabaseSeeder`.
+
+Membuat user `demo@geolevel.com` / `password` dengan 2 proyek:
+
+| Proyek | Data | Status | Tujuan |
+| ------ | ---- | ------ | ------ |
+| Survey Kanonikal BM-A ke BM-B | Persis dari `docs/formulas.md` (BM-A→TP-1→TP-2→BM-B) | **REJECTED** (fh = 0.401 m >> toleransi LA = 0.002452 m) | Demo kasus gagal toleransi |
+| Survey Demo Diterima | Data custom, fh kecil | **ACCEPTED** + adjusted (equal) | Demo kasus lolos + export |
+
+Jalankan:
+```bash
+php artisan db:seed --class=CanonicalSurveySeeder
+```
+
+Service signature yang dipakai (jangan pakai nama method yang salah):
+- `LevelingCalculationService::recalculate(Project $project): void`
+- `AdjustmentService::applyToProject(Project $project, string $method, int $userId): void`
+- `ClosureCheckerService::check()` — static helper murni, sudah otomatis dipanggil dalam `recalculate()`
+
+---
+
+## E2E Tests — Playwright
+
+Setup: `@playwright/test` + Chromium, config di `playwright.config.ts` (baseURL `https://geolevel.local`).
+
+```bash
+npm run test:e2e          # jalankan semua test (headless)
+npm run test:e2e:ui       # mode UI interaktif
+```
+
+File: `tests/e2e/survey.spec.ts` (16 test) + `tests/e2e/helpers.ts`.
+
+**Catatan penting untuk selector:**
+- Komponen `<Field label="...">` custom — `getByLabel()` tidak akan kerja.
+  Gunakan `input[placeholder="..."]` sebagai selector.
+- Halaman login pakai Breeze Blade — title tab `"Laravel"`, bukan `"GeoLevel"`.
+
+---
+
+## Loop Network Least Squares (Redundant Observations)
+
+Tabel `network_legs` — terpisah dari `readings`. Project standar tidak perlu
+menyentuh ini; hanya diisi jika ada jalur redundant yang membentuk loop.
+
+| Komponen | File |
+| --- | --- |
+| Migration | `2026_06_21_100000_create_network_legs_table.php` |
+| Migration | `2026_06_21_100100_add_network_stats_to_projects_table.php` |
+| Model | `app/Models/NetworkLeg.php` |
+| Service | `app/Services/LeastSquaresAdjustmentService.php` |
+| Controller | `app/Http/Controllers/NetworkLegController.php` |
+| Request | `app/Http/Requests/StoreNetworkLegRequest.php` |
+| Routes | `network-legs.index/store/destroy/adjust` |
+
+### Form Tambah Jalur di Show.vue
+- `dari_titik` dan `ke_titik` adalah dropdown `<select>` dengan opsi dari
+  `uniquePointNames` — computed dari `point_name` unik di `props.readings`.
+- Tidak perlu ketik manual — otomatis terisi saat ada bacaan di proyek.
+
+### Redundancy detection
+`Project::hasRedundantNetworkObservations()`: `n_legs >= n_unique_points`.
+
+### Precision exception
+`LeastSquaresAdjustmentService` — satu-satunya pengecualian aturan "never use float".
+Operasi matriks internal pakai PHP `float`; input/output tetap string presisi tinggi.
+
+---
+
 ## Next Session
 
-Project is feature-complete. Possible extensions:
-- Loop network least squares (redundant observations, full normal equation matrix)
-- Seeder with canonical worked example from `docs/formulas.md`
-- Production deployment config (Supervisor, queue worker, storage symlink)
-- E2E tests (Playwright/Cypress) for frontend flows
+Setup lokal aktif:
+- HTTPS via self-signed cert, trusted di Windows Certificate Store
+- Nginx: HTTP (80) → HTTPS (443), TLSv1.2/1.3
+- `APP_URL=https://geolevel.local`
+- Playwright: `baseURL=https://geolevel.local`, `ignoreHTTPSErrors=true`
+- `~/deploy-update.sh` — build + cache + migrate + restart worker
+- `~/update-hosts.sh` — update IP WSL di hosts Windows
+
+Possible extensions:
+- Export PDF/Excel untuk hasil network least squares
+- CI pipeline yang jalankan `test:e2e` otomatis
