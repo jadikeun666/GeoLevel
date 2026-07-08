@@ -2,10 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ExportNotAllowedException;
+use App\Jobs\Concerns\BuildsNetworkExportData;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\Response;
+use App\Exports\Sheets\NetworkLegsSheet;
+use App\Exports\Sheets\NetworkAdjustmentSheet;
+use App\Exports\Sheets\NetworkSummarySheet;
+use Maatwebsite\Excel\Facades\Excel;
+use Maatwebsite\Excel\Excel as ExcelFormat;
 use App\Http\Requests\StoreNetworkLegRequest;
 use App\Models\NetworkLeg;
 use App\Models\Project;
 use App\Services\LeastSquaresAdjustmentService;
+use App\Services\NetworkExportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,8 +33,11 @@ use Illuminate\Http\Request;
  */
 class NetworkLegController extends Controller
 {
+    use BuildsNetworkExportData;
+
     public function __construct(
         private readonly LeastSquaresAdjustmentService $leastSquaresService,
+        private readonly NetworkExportService $networkExportService,
     ) {}
 
     /**
@@ -115,5 +128,90 @@ class NetworkLegController extends Controller
             'type'    => 'success',
             'message' => "Perataan kuadrat terkecil selesai — std. deviasi: {$result['std_deviation']} m, derajat kebebasan: {$result['degrees_of_freedom']}.",
         ]);
+    }
+
+    /**
+     * GET /projects/{project}/network-legs/export/pdf
+     * Stream PDF laporan jaring langsung ke browser.
+     */
+    public function exportPdf(Project $project): Response
+    {
+        $this->authorize('view', $project);
+
+        if ($project->status !== 'accepted') {
+            abort(403, 'Export tidak diijinkan. Status proyek harus accepted.');
+        }
+
+        if ($project->networkLegs()->doesntExist()) {
+            abort(403, 'Tidak ada data jalur jaring. Tambahkan jalur terlebih dahulu.');
+        }
+
+        $legs           = $project->networkLegs()->orderBy('id')->get();
+        $adjustedPoints = collect($this->buildAdjustedPoints($project, $legs));
+        $stats          = $this->buildStats($project, $legs);
+        $connectivity   = $this->buildConnectivity($project, $legs);
+
+        $pdf = Pdf::loadView('exports.network_report', [
+            'project'        => $project,
+            'legs'           => $legs,
+            'adjustedPoints' => $adjustedPoints,
+            'stats'          => $stats,
+            'connectivity'   => $connectivity,
+        ]);
+
+        $pdf->setPaper('a4', 'portrait');
+
+        $filename = "network_report_{$project->id}.pdf";
+
+        return response($pdf->output(), 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+
+    /**
+     * GET /projects/{project}/network-legs/export/excel
+     * Download Excel laporan jaring langsung ke browser.
+     */
+    public function exportExcel(Project $project): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $this->authorize('view', $project);
+
+        if ($project->status !== 'accepted') {
+            abort(403, 'Export tidak diijinkan. Status proyek harus accepted.');
+        }
+
+        if ($project->networkLegs()->doesntExist()) {
+            abort(403, 'Tidak ada data jalur jaring. Tambahkan jalur terlebih dahulu.');
+        }
+
+        $legs           = $project->networkLegs()->orderBy('id')->get();
+        $adjustedPoints = collect($this->buildAdjustedPoints($project, $legs));
+        $stats          = $this->buildStats($project, $legs);
+
+        $export = new class($legs, $adjustedPoints, $project, $stats) implements
+            \Maatwebsite\Excel\Concerns\WithMultipleSheets
+        {
+            public function __construct(
+                private $legs,
+                private $adjustedPoints,
+                private $project,
+                private $stats
+            ) {}
+
+            public function sheets(): array
+            {
+                return [
+                    new NetworkLegsSheet($this->legs),
+                    new NetworkAdjustmentSheet($this->adjustedPoints),
+                    new NetworkSummarySheet($this->project, $this->stats),
+                ];
+            }
+        };
+
+        $filename = "network_report_{$project->id}.xlsx";
+
+        return Excel::download($export, $filename, ExcelFormat::XLSX);
     }
 }

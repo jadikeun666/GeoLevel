@@ -39,9 +39,30 @@
                 :allowed_tolerance="project.allowed_tolerance"
               />
               <template v-if="project.status === 'accepted'">
-                <ExportButton type="pdf"   :project-id="project.id" />
-                <ExportButton type="excel" :project-id="project.id" />
-                <ExportButton type="csv"   :project-id="project.id" />
+                <!-- PDF -->
+                <button @click="exportProject('pdf')"
+                  class="inline-flex items-center gap-1.5 text-xs font-semibold border border-red-300 text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors">
+                  <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+                  </svg>
+                  PDF
+                </button>
+                <!-- Excel -->
+                <button @click="exportProject('excel')"
+                  class="inline-flex items-center gap-1.5 text-xs font-semibold border border-emerald-300 text-emerald-600 hover:bg-emerald-50 px-3 py-2 rounded-lg transition-colors">
+                  <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h1.5C5.496 19.5 6 18.996 6 18.375m-3.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-1.5A1.125 1.125 0 0118 18.375M20.625 4.5H3.375m17.25 0c.621 0 1.125.504 1.125 1.125M20.625 4.5h-1.5A1.125 1.125 0 0018 5.625m3.75 0v1.5c0 .621-.504 1.125-1.125 1.125M3.375 4.5c-.621 0-1.125.504-1.125 1.125M3.375 4.5h1.5C5.496 4.5 6 5.004 6 5.625m-3.75 0v1.5c0 .621.504 1.125 1.125 1.125m0 0h1.5m-1.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m1.5-3.75C5.496 8.25 6 8.754 6 9.375v1.5m0-5.25v5.25m0-5.25C6 5.004 6.504 4.5 7.125 4.5h9.75c.621 0 1.125.504 1.125 1.125m1.125 2.625h1.5m-1.5 0A1.125 1.125 0 0118 9.375v1.5m1.5-3.75C19.496 8.25 20 8.754 20 9.375v1.5m0-5.25v5.25m0 0v5.625"/>
+                  </svg>
+                  Excel
+                </button>
+                <!-- CSV -->
+                <button @click="exportProject('csv')"
+                  class="inline-flex items-center gap-1.5 text-xs font-semibold border border-blue-300 text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors">
+                  <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+                  </svg>
+                  CSV
+                </button>
               </template>
             </div>
           </div>
@@ -198,6 +219,18 @@
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
               Tambah Jalur
             </button>
+            <template v-if="project.status === 'accepted' && project.network_std_deviation != null">
+              <button @click="exportNetwork('pdf')" :disabled="exportingNetwork.pdf"
+                class="inline-flex items-center gap-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 px-3 py-2 rounded-lg transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+                {{ exportingNetwork.pdf ? '...' : 'PDF Jaring' }}
+              </button>
+              <button @click="exportNetwork('excel')" :disabled="exportingNetwork.excel"
+                class="inline-flex items-center gap-1.5 text-xs border border-emerald-300 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 px-3 py-2 rounded-lg transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h1.5C5.496 19.5 6 18.996 6 18.375m-3.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-1.5A1.125 1.125 0 0118 18.375M20.625 4.5H3.375m17.25 0c.621 0 1.125.504 1.125 1.125M20.625 4.5h-1.5A1.125 1.125 0 0018 5.625m3.75 0v1.5c0 .621-.504 1.125-1.125 1.125M3.375 4.5c-.621 0-1.125.504-1.125 1.125M3.375 4.5h1.5C5.496 4.5 6 5.004 6 5.625m-3.75 0v1.5c0 .621.504 1.125 1.125 1.125m0 0h1.5m-1.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m1.5-3.75C5.496 8.25 6 8.754 6 9.375v1.5m0-5.25v5.25m0-5.25C6 5.004 6.504 4.5 7.125 4.5h9.75c.621 0 1.125.504 1.125 1.125m1.125 2.625h1.5m-1.5 0A1.125 1.125 0 0118 9.375v1.5m1.5-3.75C19.496 8.25 20 8.754 20 9.375v1.5m0-5.25v5.25m0 0v5.625"/></svg>
+                {{ exportingNetwork.excel ? '...' : 'Excel Jaring' }}
+              </button>
+            </template>
           </div>
         </div>
 
@@ -503,7 +536,6 @@ import ElevationTable from '@/Components/ElevationTable.vue'
 import ClosureStatusBadge from '@/Components/ClosureStatusBadge.vue'
 import LongSectionChart from '@/Components/LongSectionChart.vue'
 import CrossSectionChart from '@/Components/CrossSectionChart.vue'
-import ExportButton from '@/Components/ExportButton.vue'
 import Field from '@/Components/Field.vue'
 
 // STEP 4 — props dengan tambahan networkLegs
@@ -758,7 +790,17 @@ function deleteLeg(id) {
   })
 }
 
-const adjustingNetwork = ref(false)
+const adjustingNetwork  = ref(false)
+const exportingNetwork  = ref({ pdf: false, excel: false })
+
+async function exportNetwork(format) {
+  const routeName = format === 'pdf' ? 'network-legs.export.pdf' : 'network-legs.export.excel'
+  window.location.href = route(routeName, props.project.id)
+}
+
+function exportProject(format) {
+  window.location.href = `/projects/${props.project.id}/export/${format}`
+}
 function runLeastSquares() {
   adjustingNetwork.value = true
   router.post(route('network-legs.adjust', props.project.id), {}, {

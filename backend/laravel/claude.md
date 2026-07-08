@@ -110,7 +110,19 @@ tail -f /home/ciko/workspace/geolevel/backend/laravel/storage/logs/worker.log
 - `ChartController` — wired to `VisualizationService`, handles `?station=` query param
 - `CrossSection` model — `HasFactory` trait added, `$fillable`, `$casts`, `project()` relation
 - `CrossSectionFactory` — default state with `station_name`, `station_distance`, `offsets` JSON array
-- Full test suite: **OK (185 tests, 484 assertions)** — zero failures
+- Full test suite: **OK (204 tests, 528 assertions)** — zero failures
+- Network export feature (PDF + Excel untuk hasil loop network least squares):
+  - `app/Jobs/Concerns/BuildsNetworkExportData.php` — trait shared helper (buildAdjustedPoints, buildStats, buildConnectivity); kolom DB benar: `from_point`, `to_point`, `distance_m`, `corrected_delta_h`
+  - `app/Jobs/GenerateNetworkPdfExportJob.php` — queued, pakai trait, helper methods dihapus
+  - `app/Jobs/GenerateNetworkExcelExportJob.php` — queued, pakai trait, 3 sheets
+  - `app/Exports/Sheets/NetworkLegsSheet.php` — sheet jalur observasi
+  - `app/Exports/Sheets/NetworkAdjustmentSheet.php` — sheet elevasi terkoreksi
+  - `app/Exports/Sheets/NetworkSummarySheet.php` — sheet ringkasan statistik
+  - `app/Services/NetworkExportService.php` — guard (status=accepted + legs exist) + dispatch
+  - `resources/views/exports/network_report.blade.php` — PDF template 3 halaman
+  - Routes: `network-legs.export.pdf`, `network-legs.export.excel` (GET)
+  - `NetworkLegController::exportPdf/exportExcel` — thin, delegate ke NetworkExportService
+- `Show.vue` update: tombol "PDF Jaring" + "Excel Jaring" di tab Jaring — hanya muncul jika `status=accepted` AND `network_std_deviation != null`
 
 ### 🔄 In Progress
 - (none)
@@ -345,7 +357,7 @@ menyentuh ini; hanya diisi jika ada jalur redundant yang membentuk loop.
 | Service | `app/Services/LeastSquaresAdjustmentService.php` |
 | Controller | `app/Http/Controllers/NetworkLegController.php` |
 | Request | `app/Http/Requests/StoreNetworkLegRequest.php` |
-| Routes | `network-legs.index/store/destroy/adjust` |
+| Routes | `network-legs.index/store/destroy/adjust/export.pdf/export.excel` |
 
 ### Form Tambah Jalur di Show.vue
 - `dari_titik` dan `ke_titik` adalah dropdown `<select>` dengan opsi dari
@@ -372,5 +384,33 @@ Setup lokal aktif:
 - `~/update-hosts.sh` — update IP WSL di hosts Windows
 
 Possible extensions:
-- Export PDF/Excel untuk hasil network least squares
 - CI pipeline yang jalankan `test:e2e` otomatis
+### PHP 8.5 + maatwebsite/excel 4.x — return type fatal (FIXED)
+PHP 8.5 menegakkan covariance return type pada interface secara ketat.
+`maatwebsite/excel` 4.x menambahkan `collection(): Enumerable` pada interface
+`FromCollection`. Ketiga sheet class tidak punya return type → fatal error
+"Premature end of PHP process" tanpa pesan yang bisa di-catch.
+
+Fix — tambahkan `use Illuminate\Support\Enumerable` dan deklarasikan return type:
+```php
+public function collection(): Enumerable { ... }
+```
+Berlaku untuk: `ElevasiSheet.php`, `KoreksiSheet.php`, `RawReadingsSheet.php`
+
+### ComputedElevationFactory — reading_id FK dan observer suppression (FIXED)
+`reading_id` adalah NOT NULL FK. Factory menggunakan closure di `definition()`
+(bukan `afterCreating`) dengan `Reading::withoutEvents()` agar `ReadingObserver`
+tidak terdaftar berulang dan `RecalculateSurveyJob` tidak di-dispatch saat setup test.
+
+`flushEventListeners()` + `observe()` tidak dipakai — akumulasi registrasi observer
+berkali-kali menyebabkan stack overflow di `QUEUE_CONNECTION=sync`.
+
+Untuk test yang butuh kontrol penuh atas data seed (seperti `AdjustmentEndpointTest`),
+readings di-insert dengan `Reading::withoutEvents()`, ID-nya ditangkap, lalu
+`ComputedElevation::create()` dipanggil langsung dengan `reading_id` eksplisit —
+bukan lewat factory — agar nilai `raw_elevation` kanonik dari `docs/formulas.md`
+tidak ditimpa oleh `RecalculateSurveyJob`.
+
+### .env.testing QUEUE_CONNECTION=sync (FIXED)
+Diubah dari `database` ke `sync` agar test suite tidak membutuhkan queue worker.
+`Queue::fake()` tetap berfungsi untuk intercept dan assert job yang di-dispatch.

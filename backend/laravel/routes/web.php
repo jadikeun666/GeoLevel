@@ -62,6 +62,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post  ('/projects/{project}/network-legs',           [NetworkLegController::class, 'store'])->name('network-legs.store');
     Route::delete('/projects/{project}/network-legs/{leg}',     [NetworkLegController::class, 'destroy'])->name('network-legs.destroy');
     Route::post  ('/projects/{project}/network-legs/adjust',    [NetworkLegController::class, 'adjust'])->name('network-legs.adjust');
+    Route::get('/projects/{project}/network-legs/export/pdf',   [NetworkLegController::class, 'exportPdf'])->name('network-legs.export.pdf');
+    Route::get('/projects/{project}/network-legs/export/excel', [NetworkLegController::class, 'exportExcel'])->name('network-legs.export.excel');
 
     // ── Chart (JSON — dipanggil axios dari Vue) ───────────────────────────
     Route::get('/projects/{project}/chart/longsection',  [ChartController::class, 'longSection'])->name('chart.longsection');

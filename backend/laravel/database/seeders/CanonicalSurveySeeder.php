@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\User;
 use App\Models\Project;
+use App\Models\NetworkLeg;
 use App\Models\Reading;
 use App\Services\LevelingCalculationService;
 use App\Services\AdjustmentService;
@@ -121,5 +122,30 @@ class CanonicalSurveySeeder extends Seeder
                 userId:  $user->id,
             );
         }
+
+        // Tambah network legs untuk demo tab Jaring
+        // Loop tertutup BM-01 → TP-1 → TP-2 → BM-01 (redundant, n=3 legs, n=3 points)
+        $fresh2 = $project->fresh();
+        NetworkLeg::create([
+            'project_id'       => $fresh2->id,
+            'from_point'       => 'BM-01',
+            'to_point'         => 'TP-1',
+            'observed_delta_h' => '-0.001500',
+            'distance_m'       => '60.000',
+        ]);
+        NetworkLeg::create([
+            'project_id'       => $fresh2->id,
+            'from_point'       => 'TP-1',
+            'to_point'         => 'TP-2',
+            'observed_delta_h' => '-0.100000',
+            'distance_m'       => '60.000',
+        ]);
+        NetworkLeg::create([
+            'project_id'       => $fresh2->id,
+            'from_point'       => 'TP-2',
+            'to_point'         => 'BM-01',
+            'observed_delta_h' => '0.101500',
+            'distance_m'       => '60.000',
+        ]);
     }
 }

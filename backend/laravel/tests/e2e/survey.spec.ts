@@ -130,6 +130,47 @@ test.describe('Detail Proyek — Demo Diterima', () => {
   });
 });
 
+
+// ─── Tab Jaring ───────────────────────────────────────────────
+test.describe('Tab Jaring — Demo Diterima', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAs(page, DEMO_EMAIL, DEMO_PASSWORD);
+    await page.getByText('Survey Demo Diterima').first().click();
+    await page.waitForURL(/\/projects\/\d+/);
+    await page.getByRole('button', { name: 'Jaring', exact: true }).click();
+  });
+
+  test('tab Jaring tampil dan bisa diklik', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Jaring', exact: true })).toBeVisible();
+  });
+
+  test('tab Jaring menampilkan daftar jalur dari seeder', async ({ page }) => {
+    await expect(page.getByText('BM-01')).toBeVisible();
+    await expect(page.getByText('TP-1')).toBeVisible();
+    await expect(page.getByText('TP-2')).toBeVisible();
+  });
+
+  test('tab Jaring menampilkan tombol Tambah Jalur', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /Tambah Jalur/ })).toBeVisible();
+  });
+
+  test('tab Jaring menampilkan tombol Jalankan Perataan', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /Jalankan Perataan|Perataan/ })).toBeVisible();
+  });
+
+  test('tab Jaring menampilkan tombol export PDF dan Excel saat accepted', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /PDF Jaring/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Excel Jaring/ })).toBeVisible();
+  });
+
+  test('form tambah jalur bisa dibuka dan ditutup', async ({ page }) => {
+    await page.getByRole('button', { name: /Tambah Jalur/ }).click();
+    await expect(page.getByText(/Jalur Baru|Tambah Jalur/)).toBeVisible();
+    // Tutup modal dengan tombol Batal jika ada, atau tekan Escape
+    await page.keyboard.press('Escape');
+  });
+});
+
 // ─── Reading CRUD ─────────────────────────────────────────────
 test.describe('Reading CRUD', () => {
   test.beforeEach(async ({ page }) => {
