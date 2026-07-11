@@ -145,9 +145,10 @@ test.describe('Tab Jaring — Demo Diterima', () => {
   });
 
   test('tab Jaring menampilkan daftar jalur dari seeder', async ({ page }) => {
-    await expect(page.getByText('BM-01')).toBeVisible();
-    await expect(page.getByText('TP-1')).toBeVisible();
-    await expect(page.getByText('TP-2')).toBeVisible();
+    // Cari di dalam tabel jalur jaring — dari_titik (from_point) kolom pertama
+    await expect(page.getByRole('cell', { name: 'BM-01' }).first()).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'TP-1' }).first()).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'TP-2' }).first()).toBeVisible();
   });
 
   test('tab Jaring menampilkan tombol Tambah Jalur', async ({ page }) => {
@@ -165,8 +166,9 @@ test.describe('Tab Jaring — Demo Diterima', () => {
 
   test('form tambah jalur bisa dibuka dan ditutup', async ({ page }) => {
     await page.getByRole('button', { name: /Tambah Jalur/ }).click();
-    await expect(page.getByText(/Jalur Baru|Tambah Jalur/)).toBeVisible();
-    // Tutup modal dengan tombol Batal jika ada, atau tekan Escape
+    // Modal terbuka — heading 'Tambah Jalur' muncul
+    await expect(page.getByRole('heading', { name: /Tambah Jalur/ })).toBeVisible();
+    // Tutup modal
     await page.keyboard.press('Escape');
   });
 });

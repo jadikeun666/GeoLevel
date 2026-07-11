@@ -15,7 +15,6 @@ use App\Http\Requests\StoreNetworkLegRequest;
 use App\Models\NetworkLeg;
 use App\Models\Project;
 use App\Services\LeastSquaresAdjustmentService;
-use App\Services\NetworkExportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -37,7 +36,6 @@ class NetworkLegController extends Controller
 
     public function __construct(
         private readonly LeastSquaresAdjustmentService $leastSquaresService,
-        private readonly NetworkExportService $networkExportService,
     ) {}
 
     /**

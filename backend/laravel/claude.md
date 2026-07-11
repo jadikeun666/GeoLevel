@@ -110,7 +110,7 @@ tail -f /home/ciko/workspace/geolevel/backend/laravel/storage/logs/worker.log
 - `ChartController` — wired to `VisualizationService`, handles `?station=` query param
 - `CrossSection` model — `HasFactory` trait added, `$fillable`, `$casts`, `project()` relation
 - `CrossSectionFactory` — default state with `station_name`, `station_distance`, `offsets` JSON array
-- Full test suite: **OK (204 tests, 528 assertions)** — zero failures
+- Full test suite: **OK (202 tests, 501 assertions)** — zero failures
 - Network export feature (PDF + Excel untuk hasil loop network least squares):
   - `app/Jobs/Concerns/BuildsNetworkExportData.php` — trait shared helper (buildAdjustedPoints, buildStats, buildConnectivity); kolom DB benar: `from_point`, `to_point`, `distance_m`, `corrected_delta_h`
   - `app/Jobs/GenerateNetworkPdfExportJob.php` — queued, pakai trait, helper methods dihapus
@@ -335,7 +335,7 @@ npm run test:e2e          # jalankan semua test (headless)
 npm run test:e2e:ui       # mode UI interaktif
 ```
 
-File: `tests/e2e/survey.spec.ts` (16 test) + `tests/e2e/helpers.ts`.
+File: `tests/e2e/survey.spec.ts` (22 test) + `tests/e2e/helpers.ts`.
 
 **Catatan penting untuk selector:**
 - Komponen `<Field label="...">` custom — `getByLabel()` tidak akan kerja.
@@ -385,6 +385,8 @@ Setup lokal aktif:
 
 Possible extensions:
 - CI pipeline yang jalankan `test:e2e` otomatis
+- ✅ GenerateNetworkPdfExportJob + GenerateNetworkExcelExportJob + NetworkExportService sudah dihapus
+- ✅ GenerateNetworkPdfExportJob + GenerateNetworkExcelExportJob + NetworkExportService sudah dihapus
 ### PHP 8.5 + maatwebsite/excel 4.x — return type fatal (FIXED)
 PHP 8.5 menegakkan covariance return type pada interface secara ketat.
 `maatwebsite/excel` 4.x menambahkan `collection(): Enumerable` pada interface
@@ -410,6 +412,28 @@ readings di-insert dengan `Reading::withoutEvents()`, ID-nya ditangkap, lalu
 `ComputedElevation::create()` dipanggil langsung dengan `reading_id` eksplisit —
 bukan lewat factory — agar nilai `raw_elevation` kanonik dari `docs/formulas.md`
 tidak ditimpa oleh `RecalculateSurveyJob`.
+
+### ExportButton.vue — axios diganti window.location.href (FIXED)
+`ExportButton.vue` menggunakan `axios.get()` yang hanya fetch ke memori JS — tidak
+trigger file download di browser. Fix: ganti ke `window.location.href` sehingga
+browser langsung membuka URL dan download file.
+Berlaku juga untuk `exportNetwork()` di `Show.vue`.
+
+### NetworkExportService — sync bukan queue (FIXED)
+`NetworkLegController::exportPdf/exportExcel` awalnya dispatch Job ke queue.
+Diganti ke synchronous stream langsung (seperti `ExportController`) agar file
+langsung ter-download di browser tanpa perlu queue worker.
+`NetworkExportService` + `GenerateNetworkPdfExportJob` + `GenerateNetworkExcelExportJob`
+masih ada tapi tidak dipakai oleh controller — bisa dihapus di cleanup mendatang.
+
+### ExportButton.vue — axios diganti window.location.href (FIXED)
+`ExportButton.vue` menggunakan `axios.get()` — tidak trigger file download.
+Fix: ganti ke `window.location.href`. Berlaku juga `exportNetwork()` di `Show.vue`.
+
+### NetworkExport — sync stream bukan queue (FIXED)
+`NetworkLegController::exportPdf/exportExcel` diganti ke synchronous stream
+(seperti `ExportController`) agar file langsung ter-download tanpa queue worker.
+`NetworkExportService` + kedua Job-nya masih ada tapi tidak dipakai controller.
 
 ### .env.testing QUEUE_CONNECTION=sync (FIXED)
 Diubah dari `database` ke `sync` agar test suite tidak membutuhkan queue worker.

@@ -110,7 +110,7 @@ class NetworkExportControllerTest extends TestCase
         $user    = User::factory()->create();
         $project = $this->acceptedProjectWithLegs($user);
 
-        $response = $this->get("/projects/{$project->id}/network-legs/export/pdf");
+        $response = $this->getJson("/projects/{$project->id}/network-legs/export/pdf");
 
         $response->assertStatus(401);
     }
@@ -203,7 +203,7 @@ class NetworkExportControllerTest extends TestCase
         $user    = User::factory()->create();
         $project = $this->acceptedProjectWithLegs($user);
 
-        $response = $this->get("/projects/{$project->id}/network-legs/export/excel");
+        $response = $this->getJson("/projects/{$project->id}/network-legs/export/excel");
 
         $response->assertStatus(401);
     }
