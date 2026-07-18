@@ -68,11 +68,6 @@ protected $casts = [
         return $this->hasMany(NetworkLeg::class);
     }
 
-    public function surveyPoints(): HasMany
-    {
-        return $this->hasMany(SurveyPoint::class);
-    }
-
     public function hasNetworkLegs(): bool
     {
         return $this->networkLegs()->exists();

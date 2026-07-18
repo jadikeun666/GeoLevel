@@ -15,7 +15,8 @@
         @routes
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         @inertiaHead
-    </head>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
+</head>
     <body class="font-sans antialiased">
         @inertia
     </body>

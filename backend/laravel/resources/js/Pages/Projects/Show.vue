@@ -299,6 +299,24 @@
         </div>
       </div>
 
+      <!-- ── Tab: Peta ────────────────────────────────────────── -->
+      <div v-show="tab === 'peta'" class="px-6 py-5">
+        <div class="mb-4">
+          <h2 class="text-sm font-bold text-slate-700">Peta Survei</h2>
+          <p class="text-xs text-slate-400 font-mono mt-0.5">
+            {{ surveyPoints.length }} dari {{ uniquePointNames.length }} titik punya koordinat
+          </p>
+        </div>
+
+        <SurveyMap
+          :points="surveyPoints"
+          :elevations="elevations"
+          :network-legs="networkLegs"
+          :project-status="project.status"
+          :can-edit="false"
+        />
+      </div>
+
       <!-- ── Tab: Grafik ──────────────────────────────────────── -->
       <div v-show="tab === 'grafik'" class="px-6 py-5 space-y-4">
         <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
@@ -537,6 +555,7 @@ import ClosureStatusBadge from '@/Components/ClosureStatusBadge.vue'
 import LongSectionChart from '@/Components/LongSectionChart.vue'
 import CrossSectionChart from '@/Components/CrossSectionChart.vue'
 import Field from '@/Components/Field.vue'
+import SurveyMap from '@/Components/Map/SurveyMap.vue'
 
 // STEP 4 — props dengan tambahan networkLegs
 const props = defineProps({
@@ -545,6 +564,7 @@ const props = defineProps({
   elevations:   { type: Array,  default: () => [] },
   activityLogs: { type: Array,  default: () => [] },
   networkLegs:  { type: Array,  default: () => [] },
+  surveyPoints: { type: Array,  default: () => [] },
 })
 
 // ── Tabs — STEP 1: tambah tab 'jaring' ───────────────────────
@@ -552,6 +572,7 @@ const tabs = [
   { id: 'bacaan',    label: 'Bacaan' },
   { id: 'elevasi',   label: 'Elevasi' },
   { id: 'jaring',    label: 'Jaring' },
+  { id: 'peta',      label: 'Peta' },
   { id: 'grafik',    label: 'Grafik' },
   { id: 'aktivitas', label: 'Aktivitas' },
 ]

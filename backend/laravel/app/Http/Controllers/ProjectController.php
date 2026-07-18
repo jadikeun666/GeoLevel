@@ -68,6 +68,7 @@ class ProjectController extends Controller
         $elevations   = $project->computedElevations()->orderBy('sequence_no')->get();
         $activityLogs = $project->activityLogs()->latest()->take(50)->get();
         $networkLegs  = $project->networkLegs()->orderBy('id')->get();
+        $surveyPoints = $project->surveyPoints()->orderBy('point_name')->get();
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -76,6 +77,7 @@ class ProjectController extends Controller
                 'elevations'   => $elevations,
                 'activityLogs' => $activityLogs,
                 'networkLegs'  => $networkLegs,
+                'surveyPoints' => $surveyPoints,
             ]);
         }
 
@@ -85,6 +87,7 @@ class ProjectController extends Controller
             'elevations'   => $elevations,
             'activityLogs' => $activityLogs,
             'networkLegs'  => $networkLegs,
+            'surveyPoints' => $surveyPoints,
         ]);
     }
 

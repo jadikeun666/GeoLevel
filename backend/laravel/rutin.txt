@@ -1,0 +1,13 @@
+ciko@LAPTOP-0SG1F1ED:/mnt/c/WINDOWS/system32$ find ~ -name artisan 2>/dev/null
+/home/ciko/workspace/geolevel/backend/laravel/artisan
+ciko@LAPTOP-0SG1F1ED:/mnt/c/WINDOWS/system32$ whoami
+ciko
+ciko@LAPTOP-0SG1F1ED:/mnt/c/WINDOWS/system32$ hostname -I
+172.19.176.181 172.17.0.1
+
+
+
+jalankan tiap mau coba:
+bash ~/update-hosts.sh
+npm run test:e2e        # jalankan semua E2E test
+npm run test:e2e:ui     # mode interaktif Playwright

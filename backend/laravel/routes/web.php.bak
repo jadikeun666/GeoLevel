@@ -6,7 +6,6 @@ use App\Http\Controllers\NetworkLegController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReadingController;
-use App\Http\Controllers\SurveyPointController;
 use Illuminate\Support\Facades\Route;
 
 // ── Landing page (welcome.blade.php) ─────────────────────────────────────
@@ -65,15 +64,6 @@ Route::middleware(['auth'])->group(function () {
     Route::post  ('/projects/{project}/network-legs/adjust',    [NetworkLegController::class, 'adjust'])->name('network-legs.adjust');
     Route::get('/projects/{project}/network-legs/export/pdf',   [NetworkLegController::class, 'exportPdf'])->name('network-legs.export.pdf');
     Route::get('/projects/{project}/network-legs/export/excel', [NetworkLegController::class, 'exportExcel'])->name('network-legs.export.excel');
-
-    // ── Survey Points (koordinat GPS untuk visualisasi peta) ─────────────
-    // Opsional — proyek tetap berfungsi penuh tanpa koordinat.
-    // Lihat docs/map.md untuk spesifikasi lengkap.
-    Route::get   ('/projects/{project}/survey-points',         [SurveyPointController::class, 'index'])->name('survey-points.index');
-    Route::post  ('/projects/{project}/survey-points',         [SurveyPointController::class, 'store'])->name('survey-points.store');
-    Route::put   ('/projects/{project}/survey-points/{point}', [SurveyPointController::class, 'update'])->name('survey-points.update');
-    Route::delete('/projects/{project}/survey-points/{point}', [SurveyPointController::class, 'destroy'])->name('survey-points.destroy');
-    Route::post  ('/projects/{project}/survey-points/import',  [SurveyPointController::class, 'importBatch'])->name('survey-points.import');
 
     // ── Chart (JSON — dipanggil axios dari Vue) ───────────────────────────
     Route::get('/projects/{project}/chart/longsection',  [ChartController::class, 'longSection'])->name('chart.longsection');
