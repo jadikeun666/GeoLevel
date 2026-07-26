@@ -1,6 +1,6 @@
 <template>
   <div class="relative">
-    <div ref="mapContainer" class="w-full h-[500px] rounded-lg border border-slate-200 bg-slate-100"></div>
+    <div ref="mapContainer" class="w-full h-[280px] rounded-lg border border-slate-200 bg-slate-100"></div>
     <div class="absolute top-3 left-3 z-10 flex rounded-lg overflow-hidden border border-slate-200 shadow-sm bg-white text-xs font-medium">
       <button @click="setMapStyle('street')" type="button"
         :class="mapStyleMode === 'street' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'"
@@ -9,41 +9,30 @@
         :class="mapStyleMode === 'satellite' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'"
         class="px-2.5 py-1.5 border-l border-slate-200">Satelit</button>
     </div>
-
-    <div v-if="points.length === 0"
-         class="absolute inset-0 flex items-center justify-center bg-white/70 rounded-lg pointer-events-none">
-      <p class="text-xs text-slate-400 font-mono">Belum ada titik dengan koordinat</p>
-    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { router } from '@inertiajs/vue3'
 import maplibregl from 'maplibre-gl'
 import { MAP_STYLES, INDONESIA_CENTER } from './mapStyle'
 
 const props = defineProps({
-  points: { type: Array, default: () => [] },
-  elevations:    { type: Array, default: () => [] },
-  networkLegs:   { type: Array, default: () => [] },
-  projectStatus: { type: String, default: 'draft' },
-  canEdit:       { type: Boolean, default: false },
+  mapPoints: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['point-clicked', 'request-add-point'])
+const STATUS_COLOR = {
+  draft:      '#9CA3AF',
+  calculated: '#3B82F6',
+  accepted:   '#10B981',
+  rejected:   '#EF4444',
+}
 
 const mapContainer = ref(null)
 const mapStyleMode = ref('street')
 let map = null
 let markers = []
-
-const MARKER_STYLE = {
-  BM: { color: '#F59E0B', size: 30 },
-  TP: { color: '#3B82F6', size: 24 },
-  IS: { color: '#10B981', size: 20 },
-  CP: { color: '#8B5CF6', size: 24 },
-}
-
 
 function clearMarkers() {
   markers.forEach(m => m.remove())
@@ -52,50 +41,45 @@ function clearMarkers() {
 
 function renderMarkers() {
   clearMarkers()
-
-  props.points.forEach(point => {
-    const style = MARKER_STYLE[point.point_type] || MARKER_STYLE.TP
-
+  props.mapPoints.forEach(p => {
+    const color = STATUS_COLOR[p.status] || STATUS_COLOR.draft
     const el = document.createElement('div')
-    el.style.width = `${style.size}px`
-    el.style.height = `${style.size}px`
+    el.style.width = '26px'
+    el.style.height = '26px'
     el.style.borderRadius = '50%'
-    el.style.background = style.color
+    el.style.background = color
     el.style.border = '2px solid white'
     el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.3)'
     el.style.cursor = 'pointer'
+    el.title = `${p.project_name} (${p.point_count} titik)`
 
     const marker = new maplibregl.Marker({ element: el })
-      .setLngLat([Number(point.lng), Number(point.lat)])
+      .setLngLat([Number(p.center_lng), Number(p.center_lat)])
       .addTo(map)
 
     el.addEventListener('click', () => {
-      emit('point-clicked', { point_name: point.point_name })
+      router.visit(route('projects.show', p.project_id))
     })
 
     markers.push(marker)
   })
-
   fitToMarkers()
 }
 
 function fitToMarkers() {
   if (!map) return
-
-  if (props.points.length === 0) {
+  if (props.mapPoints.length === 0) {
     map.jumpTo({ center: INDONESIA_CENTER, zoom: 4 })
     return
   }
-
-  if (props.points.length === 1) {
-    const p = props.points[0]
-    map.jumpTo({ center: [Number(p.lng), Number(p.lat)], zoom: 15 })
+  if (props.mapPoints.length === 1) {
+    const p = props.mapPoints[0]
+    map.jumpTo({ center: [Number(p.center_lng), Number(p.center_lat)], zoom: 13 })
     return
   }
-
   const bounds = new maplibregl.LngLatBounds()
-  props.points.forEach(p => bounds.extend([Number(p.lng), Number(p.lat)]))
-  map.fitBounds(bounds, { padding: 60, maxZoom: 17 })
+  props.mapPoints.forEach(p => bounds.extend([Number(p.center_lng), Number(p.center_lat)]))
+  map.fitBounds(bounds, { padding: 50, maxZoom: 15 })
 }
 
 function setMapStyle(mode) {
@@ -103,6 +87,7 @@ function setMapStyle(mode) {
   mapStyleMode.value = mode
   map.setStyle(MAP_STYLES[mode])
 }
+
 onMounted(() => {
   map = new maplibregl.Map({
     container: mapContainer.value,
@@ -110,18 +95,10 @@ onMounted(() => {
     center: INDONESIA_CENTER,
     zoom: 4,
   })
-
   map.addControl(new maplibregl.NavigationControl(), 'top-right')
-
   map.on('load', () => {
     renderMarkers()
   })
-
-  if (props.canEdit) {
-    map.on('click', (e) => {
-      emit('request-add-point', { lat: e.lngLat.lat, lng: e.lngLat.lng })
-    })
-  }
 })
 
 onBeforeUnmount(() => {
@@ -132,7 +109,7 @@ onBeforeUnmount(() => {
   }
 })
 
-watch(() => props.points, () => {
+watch(() => props.mapPoints, () => {
   if (map && map.loaded()) {
     renderMarkers()
   }

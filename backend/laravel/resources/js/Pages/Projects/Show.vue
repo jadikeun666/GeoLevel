@@ -300,12 +300,18 @@
       </div>
 
       <!-- ── Tab: Peta ────────────────────────────────────────── -->
-      <div v-show="tab === 'peta'" class="px-6 py-5">
-        <div class="mb-4">
-          <h2 class="text-sm font-bold text-slate-700">Peta Survei</h2>
-          <p class="text-xs text-slate-400 font-mono mt-0.5">
-            {{ surveyPoints.length }} dari {{ uniquePointNames.length }} titik punya koordinat
-          </p>
+      <div v-show="tab === 'peta'" class="px-6 py-5 space-y-4">
+        <div class="mb-2 flex items-center justify-between">
+          <div>
+            <h2 class="text-sm font-bold text-slate-700">Peta Survei</h2>
+            <p class="text-xs text-slate-400 font-mono mt-0.5">
+              {{ surveyPoints.length }} dari {{ uniquePointNames.length }} titik punya koordinat
+            </p>
+          </div>
+          <button @click="showGpxImport = true"
+            class="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200">
+            📁 Import GPX
+          </button>
         </div>
 
         <SurveyMap
@@ -313,7 +319,57 @@
           :elevations="elevations"
           :network-legs="networkLegs"
           :project-status="project.status"
-          :can-edit="false"
+          :can-edit="true"
+        />
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+            <h3 class="text-xs font-bold text-slate-600 mb-2">Titik dengan koordinat</h3>
+            <ul v-if="pointsWithCoords.length" class="space-y-1.5">
+              <li v-for="p in pointsWithCoords" :key="p.id"
+                class="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-2.5 py-1.5">
+                <span class="font-mono text-slate-600">
+                  {{ p.point_name }} <span class="text-slate-400">({{ p.point_type }})</span>
+                  <span class="text-slate-400 ml-1">{{ Number(p.lat).toFixed(6) }}, {{ Number(p.lng).toFixed(6) }}</span>
+                </span>
+                <span class="flex gap-1.5 shrink-0 ml-2">
+                  <button @click="openEditPoint(p)" class="text-blue-600 hover:underline">Edit</button>
+                  <button @click="deletePoint(p)" class="text-red-500 hover:underline">Hapus</button>
+                </span>
+              </li>
+            </ul>
+            <p v-else class="text-xs text-slate-400">Belum ada titik dengan koordinat.</p>
+          </div>
+
+          <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+            <h3 class="text-xs font-bold text-slate-600 mb-2">Titik tanpa koordinat</h3>
+            <ul v-if="pointsWithoutCoords.length" class="space-y-1.5">
+              <li v-for="name in pointsWithoutCoords" :key="name"
+                class="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-2.5 py-1.5">
+                <span class="font-mono text-slate-600">{{ name }}</span>
+                <button @click="openAddPoint(name)" class="text-blue-600 hover:underline shrink-0 ml-2">+ Tambah Koordinat</button>
+              </li>
+            </ul>
+            <p v-else class="text-xs text-slate-400">Semua titik sudah punya koordinat.</p>
+          </div>
+        </div>
+
+        <LocationPicker
+          v-if="showLocationPicker"
+          :point-name="editingPoint.point_name"
+          :initial-lat="editingPoint.lat"
+          :initial-lng="editingPoint.lng"
+          :point-type="editingPoint.point_type"
+          @save="savePoint"
+          @cancel="closeLocationPicker"
+        />
+
+        <GpxImportModal
+          v-if="showGpxImport"
+          :project-id="project.id"
+          :known-point-names="uniquePointNames"
+          @imported="showGpxImport = false"
+          @cancel="showGpxImport = false"
         />
       </div>
 
@@ -555,7 +611,10 @@ import ClosureStatusBadge from '@/Components/ClosureStatusBadge.vue'
 import LongSectionChart from '@/Components/LongSectionChart.vue'
 import CrossSectionChart from '@/Components/CrossSectionChart.vue'
 import Field from '@/Components/Field.vue'
-import SurveyMap from '@/Components/Map/SurveyMap.vue'
+import { defineAsyncComponent } from 'vue'
+const SurveyMap = defineAsyncComponent(() => import('@/Components/Map/SurveyMap.vue'))
+const LocationPicker = defineAsyncComponent(() => import('@/Components/Map/LocationPicker.vue'))
+const GpxImportModal = defineAsyncComponent(() => import('@/Components/Map/GpxImportModal.vue'))
 
 // STEP 4 — props dengan tambahan networkLegs
 const props = defineProps({
@@ -577,6 +636,70 @@ const tabs = [
   { id: 'aktivitas', label: 'Aktivitas' },
 ]
 const tab = ref('bacaan')
+
+// ── Peta: koordinat titik (survey_points) ─────────────────────
+const showLocationPicker = ref(false)
+const showGpxImport = ref(false)
+const editingPoint = ref(null) // { id: number|null, point_name, lat, lng, point_type }
+
+const pointsWithCoords = computed(() => props.surveyPoints)
+const pointsWithoutCoords = computed(() => {
+  const covered = new Set(props.surveyPoints.map(p => p.point_name))
+  return uniquePointNames.value.filter(n => !covered.has(n))
+})
+
+function openAddPoint(name) {
+  editingPoint.value = { id: null, point_name: name, lat: null, lng: null, point_type: 'TP' }
+  showLocationPicker.value = true
+}
+
+function openEditPoint(point) {
+  editingPoint.value = {
+    id: point.id,
+    point_name: point.point_name,
+    lat: Number(point.lat),
+    lng: Number(point.lng),
+    point_type: point.point_type,
+  }
+  showLocationPicker.value = true
+}
+
+function closeLocationPicker() {
+  showLocationPicker.value = false
+  editingPoint.value = null
+}
+
+function savePoint(payload) {
+  const body = {
+    point_name: editingPoint.value.point_name,
+    lat: payload.lat,
+    lng: payload.lng,
+    point_type: payload.point_type,
+    notes: payload.notes || null,
+    source: 'manual',
+  }
+  if (editingPoint.value.id) {
+    router.put(route('survey-points.update', { project: props.project.id, point: editingPoint.value.id }), body, {
+      preserveScroll: true,
+      onSuccess: () => closeLocationPicker(),
+      onError: () => alert('Gagal menyimpan koordinat.'),
+    })
+  } else {
+    router.post(route('survey-points.store', props.project.id), body, {
+      preserveScroll: true,
+      onSuccess: () => closeLocationPicker(),
+      onError: () => alert('Gagal menyimpan koordinat.'),
+    })
+  }
+}
+
+function deletePoint(point) {
+  if (!confirm(`Hapus koordinat titik \${point.point_name}?`)) return
+  router.delete(route('survey-points.destroy', { project: props.project.id, point: point.id }), {
+    preserveScroll: true,
+    onError: () => alert('Gagal menghapus koordinat.'),
+  })
+}
 
 // ── Elevation rows ───────────────────────────────────────────
 const loadingElevations = ref(false)

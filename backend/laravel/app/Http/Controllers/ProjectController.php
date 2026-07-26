@@ -37,7 +37,24 @@ class ProjectController extends Controller
                 'total_distance_km', 'status',
             ]);
 
-        return Inertia::render('Projects/Index', compact('projects'));
+        // Titik rata-rata koordinat per proyek, untuk mini-map overview.
+        // Proyek tanpa survey_points tidak muncul di sini (whereHas).
+        $mapPoints = $request->user()
+            ->projects()
+            ->whereHas('surveyPoints')
+            ->with(['surveyPoints' => fn ($q) => $q->select('project_id', 'lat', 'lng')])
+            ->get(['id', 'name', 'status'])
+            ->map(fn ($p) => [
+                'project_id'   => $p->id,
+                'project_name' => $p->name,
+                'status'       => $p->status,
+                'center_lat'   => (float) $p->surveyPoints->avg('lat'),
+                'center_lng'   => (float) $p->surveyPoints->avg('lng'),
+                'point_count'  => $p->surveyPoints->count(),
+            ])
+            ->values();
+
+        return Inertia::render('Projects/Index', compact('projects', 'mapPoints'));
     }
 
     /**

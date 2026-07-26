@@ -34,6 +34,11 @@
       </div>
     </div>
 
+    <!-- ── Mini-map overview ───────────────────────────────────── -->
+    <div v-if="mapPoints.length" class="bg-white border-b border-slate-100 px-6 py-4">
+      <ProjectsOverviewMap :map-points="mapPoints" />
+    </div>
+
     <!-- ── Filter / search bar ─────────────────────────────────── -->
     <div class="bg-white border-b border-slate-100 px-6 py-3 flex items-center gap-3 flex-wrap">
       <div class="flex gap-1.5">
@@ -261,11 +266,12 @@
 </template>
 
 <script setup>
-import { ref, computed, h } from 'vue'
+import { ref, computed, h, defineAsyncComponent } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import StatusPill from '@/Components/StatusPill.vue'
 import Field from '@/Components/Field.vue'
+const ProjectsOverviewMap = defineAsyncComponent(() => import('@/Components/Map/ProjectsOverviewMap.vue'))
 
 // ── Inline StatTile sub-component ───────────────────────────
 const StatTile = (props) => h('div', { class: 'px-6 py-3 flex flex-col items-center min-w-[80px]' }, [
@@ -275,7 +281,8 @@ const StatTile = (props) => h('div', { class: 'px-6 py-3 flex flex-col items-cen
 StatTile.props = ['label', 'value', 'color']
 
 const props = defineProps({
-  projects: { type: Array, default: () => [] },
+  projects:  { type: Array, default: () => [] },
+  mapPoints: { type: Array, default: () => [] },
 })
 
 // ── Filter / search ──────────────────────────────────────────
