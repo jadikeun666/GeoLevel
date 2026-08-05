@@ -149,6 +149,7 @@ const props = defineProps({
   initialLat: { type: Number, default: null },
   initialLng: { type: Number, default: null },
   pointType:  { type: String, default: 'TP' },
+  referencePoints: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['save', 'cancel'])
@@ -167,6 +168,49 @@ const mapStyleMode = ref('street')
 const hoverCoord = ref(null)
 let map = null
 let marker = null
+let referenceMarkers = []
+
+function renderReferenceMarkers() {
+  if (!map) return
+  referenceMarkers.forEach(m => m.remove())
+  referenceMarkers = []
+
+  props.referencePoints
+    .filter(p => p.point_name !== props.pointName)
+    .forEach(p => {
+      const el = document.createElement('div')
+      el.style.width = '12px'
+      el.style.height = '12px'
+      el.style.borderRadius = '50%'
+      el.style.background = '#94A3B8'
+      el.style.opacity = '0.75'
+      el.style.border = '1.5px solid white'
+      el.style.boxShadow = '0 1px 3px rgba(0,0,0,0.25)'
+      el.title = p.point_name
+
+      const label = document.createElement('div')
+      label.textContent = p.point_name
+      label.style.position = 'absolute'
+      label.style.top = '14px'
+      label.style.left = '50%'
+      label.style.transform = 'translateX(-50%)'
+      label.style.fontSize = '9px'
+      label.style.fontFamily = 'monospace'
+      label.style.color = '#64748B'
+      label.style.background = 'rgba(255,255,255,0.85)'
+      label.style.padding = '0 3px'
+      label.style.borderRadius = '3px'
+      label.style.whiteSpace = 'nowrap'
+      el.appendChild(label)
+      el.style.position = 'relative'
+
+      const m = new maplibregl.Marker({ element: el })
+        .setLngLat([Number(p.lng), Number(p.lat)])
+        .addTo(map)
+
+      referenceMarkers.push(m)
+    })
+}
 
 const DEFAULT_CENTER = INDONESIA_CENTER // [lng, lat]
 const DEFAULT_ZOOM = 4
@@ -207,6 +251,7 @@ onMounted(() => {
 
   map.on('load', () => {
     if (hasInitial) placeMarker(props.initialLat, props.initialLng)
+    renderReferenceMarkers()
   })
 
   map.on('click', (e) => {
@@ -222,6 +267,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  referenceMarkers.forEach(m => m.remove())
+  referenceMarkers = []
   map?.remove()
   map = null
 })
