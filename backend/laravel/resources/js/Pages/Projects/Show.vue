@@ -320,6 +320,11 @@
           :network-legs="networkLegs"
           :project-status="project.status"
           :can-edit="true"
+          @edit-point-requested="openEditPoint"
+        />
+        <MapLegend
+          :project-status="project.status"
+          :show-network-legend="networkLegs.length > 0"
         />
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -360,6 +365,7 @@
           :initial-lat="editingPoint.lat"
           :initial-lng="editingPoint.lng"
           :point-type="editingPoint.point_type"
+          :reference-points="surveyPoints"
           @save="savePoint"
           @cancel="closeLocationPicker"
         />
@@ -615,6 +621,7 @@ import { defineAsyncComponent } from 'vue'
 const SurveyMap = defineAsyncComponent(() => import('@/Components/Map/SurveyMap.vue'))
 const LocationPicker = defineAsyncComponent(() => import('@/Components/Map/LocationPicker.vue'))
 const GpxImportModal = defineAsyncComponent(() => import('@/Components/Map/GpxImportModal.vue'))
+const MapLegend = defineAsyncComponent(() => import('@/Components/Map/MapLegend.vue'))
 
 // STEP 4 — props dengan tambahan networkLegs
 const props = defineProps({
