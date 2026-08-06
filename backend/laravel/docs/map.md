@@ -9,27 +9,57 @@
 
 GeoLevel Map Feature menambahkan visualisasi spasial untuk data survei waterpass.
 Surveyor dapat melihat posisi BM, TP, dan titik-titik ukur lainnya di atas peta
-nyata, lengkap dengan jalur pengukuran, jaring network, dan informasi elevasi.
+nyata (mode jalan maupun citra satelit), lengkap dengan koordinat manual, import
+GPX, jalur pengukuran, overlay jaring, dan overview peta di halaman daftar proyek.
 
 **Prinsip utama:**
 - Semua komponen peta menggunakan library dan tile yang **100% gratis selamanya**
 - Koordinat bersifat **opsional** — proyek tetap berfungsi penuh tanpa koordinat
 - Koordinat **terpisah** dari `readings` — disimpan di tabel `survey_points` sendiri
 - Tidak ada dependency berbayar, tidak ada API key yang membutuhkan kartu kredit
+- Komponen peta (berat karena WebGL) selalu **lazy-loaded**, tidak pernah masuk
+  bundle utama aplikasi
+
+**Status keseluruhan (per sesi terakhir): Fase 1, 2, dan 3 SEMUA SELESAI.**
+Satu-satunya pekerjaan besar yang tersisa adalah **export PDF untuk peta**
+(peta belum masuk ke field book), yang sengaja ditunda sampai tampilan
+visual matang — sekarang sudah matang, jadi ini prioritas sesi berikutnya.
 
 ---
 
 ## Stack Peta
 
 | Komponen          | Teknologi                          | Lisensi      | Biaya      |
-| ----------------- | ---------------------------------- | ------------ | ---------- |
-| Map Library       | **MapLibre GL JS v4**              | BSD-3-Clause | Gratis     |
+| ----------------- | ----------------------------------- | ------------ | ---------- |
+| Map Library       | **MapLibre GL JS v5.24.0**         | BSD-3-Clause | Gratis     |
 | Vue wrapper       | **maplibre-gl** (langsung, no wrapper) | —        | Gratis     |
-| Tile Provider     | **OpenStreetMap via tile.openstreetmap.org** | ODbL | Gratis   |
-| Tile fallback     | **Stadia Maps Free Tier** (200k req/bulan) | — | Gratis  |
+| Tile Provider (jalan) | **CARTO Basemaps (Voyager)**   | ODbL + CARTO attribution | Gratis |
+| Tile Provider (satelit) | **Esri World Imagery**       | Esri attribution | Gratis (standard usage) |
 | Geocoder/Search   | **Nominatim** (OpenStreetMap)      | ODbL         | Gratis     |
-| GPX Parser        | **gpxparser** (npm)                | MIT          | Gratis     |
+| GPX Parser        | **gpxparser** (npm, v3.0.8)        | MIT          | Gratis     |
 | Koordinat storage | PostgreSQL `NUMERIC(12,8)`         | —            | —          |
+
+### ⚠️ PERUBAHAN PENTING: tile provider bukan lagi `tile.openstreetmap.org`
+
+Spesifikasi awal dokumen ini menyebut `tile.openstreetmap.org` sebagai tile
+provider utama. **Ini sudah diganti** setelah ditemukan bug produksi nyata:
+MapLibre GL menggambar tile lewat WebGL (texture), dan WebGL **mewajibkan**
+header `Access-Control-Allow-Origin` (CORS) dari server tile. Server resmi
+`tile.openstreetmap.org` tidak konsisten mengirim header itu, menyebabkan
+sebagian tile gagal fetch total (`ERR_FAILED`, error `AJAXError` di console)
+dan peta tampil kosong/parsial secara acak — bukan soal gaya visual, tapi bug
+loading yang nyata.
+
+**Solusi yang dipakai sekarang:** dua tile source terpisah, dipilih lewat
+toggle "Peta" / "Satelit" di semua komponen peta:
+
+1. **CARTO Basemaps (Voyager)** — mode jalan/vektor-style, gratis selamanya,
+   tanpa API key, kirim CORS header dengan benar.
+2. **Esri World Imagery** — mode satelit (foto udara asli, bukan peta vektor),
+   gratis untuk pemakaian standar tanpa API key, kirim CORS header dengan benar.
+
+Kedua tile provider ini adalah pengganti langsung, bukan tambahan opsional —
+jangan kembalikan ke `tile.openstreetmap.org` untuk MapLibre GL.
 
 ### Instalasi
 
@@ -41,42 +71,164 @@ npm install maplibre-gl gpxparser
 # GPX parsing dilakukan di frontend (Vue), bukan backend
 ```
 
-### Import di Vue component
+### Style config terpusat: `resources/js/Components/Map/mapStyle.js`
+
+Semua komponen peta (`SurveyMap.vue`, `LocationPicker.vue`,
+`ProjectsOverviewMap.vue`) mengimpor style dari satu file bersama — **jangan**
+duplikasi objek style di masing-masing komponen.
 
 ```js
-import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
-```
+// resources/js/Components/Map/mapStyle.js
+export const INDONESIA_CENTER = [118.0, -2.5]
 
-### Tile URL yang digunakan
-
-```js
-// Primary: OpenStreetMap (gratis, no API key)
-const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-
-// Attribution wajib dicantumkan (syarat ODbL)
-const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-
-// Style object untuk MapLibre
-const MAP_STYLE = {
+export const STREET_STYLE = {
   version: 8,
   sources: {
-    osm: {
+    carto: {
       type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tiles: [
+        'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      ],
       tileSize: 256,
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      attribution: CARTO_ATTRIBUTION,
     },
   },
-  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+  layers: [{ id: 'carto', type: 'raster', source: 'carto' }],
 }
+
+export const SATELLITE_STYLE = {
+  version: 8,
+  sources: {
+    esri: {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      attribution: ESRI_ATTRIBUTION,
+    },
+  },
+  layers: [{ id: 'esri', type: 'raster', source: 'esri' }],
+}
+
+export const MAP_STYLES = { street: STREET_STYLE, satellite: SATELLITE_STYLE }
+```
+
+### Toggle Peta/Satelit — pola implementasi standar (UPDATED — lihat bug fix di bawah)
+
+Setiap komponen peta yang bikin instance `maplibregl.Map` wajib pakai pola ini:
+
+```js
+import { MAP_STYLES, INDONESIA_CENTER } from './mapStyle'
+
+const mapStyleMode = ref('street') // 'street' | 'satellite'
+
+function setMapStyle(mode) {
+  if (mapStyleMode.value === mode || !map) return
+  mapStyleMode.value = mode
+  map.setStyle(MAP_STYLES[mode])
+}
+
+// saat init:
+map = new maplibregl.Map({
+  container: mapContainer.value,
+  style: MAP_STYLES[mapStyleMode.value],
+  // ...
+})
+```
+
+Marker adalah elemen DOM terpisah (bukan bagian dari style), jadi otomatis
+tetap terlihat saat `setStyle()` dipanggil — tidak perlu re-render marker saat
+toggle mode.
+
+**⚠️ PENTING — untuk komponen yang menambahkan GeoJSON source/layer custom
+(polyline, network legs, dll — bukan sekadar marker DOM):** pola di atas
+**tidak cukup**. `setStyle()` menghapus SEMUA source/layer custom (bukan
+marker DOM), dan menunggu event `map.once('style.load', ...)` untuk
+menambahkannya kembali **rawan race condition** — event itu kadang sudah
+selesai fire sebelum listener terpasang. `SurveyMap.vue` memakai pola
+polling yang lebih robust:
+
+```js
+function waitForStyleReady(callback, attemptsLeft = 40) {
+  if (!map) return
+  if (map.isStyleLoaded()) {
+    callback()
+    return
+  }
+  if (attemptsLeft <= 0) {
+    console.error('Timeout menunggu style siap.')
+    return
+  }
+  requestAnimationFrame(() => waitForStyleReady(callback, attemptsLeft - 1))
+}
+
+function setMapStyle(mode) {
+  if (mapStyleMode.value === mode || !map) return
+  mapStyleMode.value = mode
+  map.setStyle(MAP_STYLES[mode])
+  waitForStyleReady(() => {
+    renderRoute()
+    renderNetworkLegs()
+  })
+}
+```
+
+**Wajib dipakai** untuk fitur peta apa pun ke depan yang menambahkan GeoJSON
+source/layer di atas `map.setStyle()` — jangan pakai `once('style.load', ...)`.
+Detail lengkap kejadian bug ini: lihat `docs/claude.md` → "Known Fixes
+Applied" → entri "`map.setStyle()` + `once('style.load', ...)` race condition".
+
+### CSS MapLibre — tetap via CDN, bukan Vite
+
+**Tidak berubah** dari keputusan sebelumnya (lihat `claude.md` → "Known Fixes
+Applied"): CSS MapLibre dimuat via `<link>` tag ke CDN jsDelivr di
+`resources/views/app.blade.php`, bukan `import` di SFC Vue atau `@import` di
+`resources/css/app.css`. Ini menghindari konflik dengan pipeline PostCSS/Tailwind.
+
+```html
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
+```
+
+Versi di URL CDN harus disinkronkan manual dengan versi `maplibre-gl` di
+`package.json` setiap kali di-upgrade.
+
+### Code-splitting — semua komponen peta wajib lazy-loaded
+
+`maplibre-gl` adalah library besar (~1MB unminified). Semua komponen peta
+**wajib** diimpor lewat `defineAsyncComponent`, bukan `import` statis biasa,
+supaya kode itu tidak pernah masuk bundle utama halaman:
+
+```js
+import { defineAsyncComponent } from 'vue'
+const SurveyMap = defineAsyncComponent(() => import('@/Components/Map/SurveyMap.vue'))
+const LocationPicker = defineAsyncComponent(() => import('@/Components/Map/LocationPicker.vue'))
+const GpxImportModal = defineAsyncComponent(() => import('@/Components/Map/GpxImportModal.vue'))
+const ProjectsOverviewMap = defineAsyncComponent(() => import('@/Components/Map/ProjectsOverviewMap.vue'))
+const MapLegend = defineAsyncComponent(() => import('@/Components/Map/MapLegend.vue'))
+```
+
+Hasil nyata dari penerapan pola ini: `Show-*.js` turun dari **1,299 kB → 260 kB**
+setelah lazy-loading diterapkan. `vite.config.js` juga menaikkan
+`chunkSizeWarningLimit` ke `1200` karena chunk `mapStyle-*.js` (berisi
+`maplibre-gl` itu sendiri, ~1MB) memang wajar besar untuk library WebGL, dan
+sudah dipastikan hanya di-download saat komponen peta benar-benar mount.
+
+```js
+// vite.config.js
+build: {
+    chunkSizeWarningLimit: 1200,
+},
 ```
 
 ---
 
 ## Database Schema
 
-### Tabel Baru: `survey_points`
+### Tabel: `survey_points`
 
 ```sql
 CREATE TABLE survey_points (
@@ -106,9 +258,22 @@ CREATE INDEX idx_survey_points_point_name ON survey_points (project_id, point_na
 - Kolom `lat`/`lng` menggunakan `NUMERIC(12,8)` — bukan `FLOAT` sesuai presisi policy
 - `elevation_ref` adalah elevasi GPS mentah dari alat, **bukan** hasil kalkulasi sipat datar
 
+### Tabel: `network_legs` (relevan untuk overlay peta)
+
+Lihat detail lengkap struktur tabel di `docs/database.md` dan section "Loop
+Network Least Squares" di `docs/claude.md`. Kolom yang relevan untuk fitur
+peta: `from_point`, `to_point` (nama titik, dicocokkan ke `survey_points.point_name`
+untuk mendapatkan koordinat), `residual` (indikator kualitas fit numerik).
+
+**Penting:** `NetworkLeg` **tidak punya kolom `status` per-leg**. Warna
+overlay garis jaring di peta mengikuti **status proyek** secara keseluruhan
+(`draft`/`calculated`/`accepted`/`rejected`), bukan status per-leg individual.
+
 ### Perubahan pada Tabel Lain
 
-Tidak ada perubahan pada tabel yang sudah ada. `survey_points` sepenuhnya additive.
+Tidak ada perubahan pada tabel yang sudah ada selain `network_legs` (sudah
+ada sebelumnya, sekarang dipakai juga oleh fitur peta). `survey_points`
+sepenuhnya additive.
 
 ### Eloquent Model
 
@@ -135,112 +300,98 @@ class SurveyPoint extends Model
 }
 ```
 
+`Project::surveyPoints(): HasMany` sudah ada dan dipakai baik untuk `Show.vue`
+props maupun query `mapPoints` di `ProjectController::index()`.
+
 ---
 
-## Arsitektur Komponen
+## Arsitektur Komponen — Status Aktual
 
-### Struktur File Baru
-
-```
+### Struktur File (kondisi sekarang, sudah lengkap — SEMUA komponen selesai)
 resources/js/
 ├── Components/
-│   ├── Map/
-│   │   ├── SurveyMap.vue          ← komponen utama MapLibre GL
-│   │   ├── LocationPicker.vue     ← modal klik-peta untuk input koordinat
-│   │   ├── GpxImportModal.vue     ← modal import file GPX
-│   │   └── MapLegend.vue          ← legenda marker dan warna
-│   └── ... (existing components)
+│ ├── Map/
+│ │ ├── mapStyle.js ← style config bersama (STREET/SATELLITE) ✅
+│ │ ├── SurveyMap.vue ← peta utama: marker, toggle, polyline, ✅
+│ │ │ popup, network overlay
+│ │ ├── LocationPicker.vue ← modal input/edit koordinat + mini-map ✅
+│ │ │ + marker referensi
+│ │ ├── GpxImportModal.vue ← modal import file GPX ✅
+│ │ ├── ProjectsOverviewMap.vue ← mini-map di halaman daftar proyek ✅
+│ │ └── MapLegend.vue ← legenda ikon marker + garis ✅
+│ └── ... (existing components)
 └── Pages/
-    └── Projects/
-        └── Show.vue               ← tambah tab "Peta" (existing file)
+└── Projects/
+├── Show.vue ← tab "Peta" terintegrasi penuh ✅
+└── Index.vue ← mini-map overview terintegrasi ✅
 
 app/Http/Controllers/
-└── SurveyPointController.php      ← CRUD koordinat titik
+├── SurveyPointController.php ← CRUD + importBatch, semua lengkap ✅
+└── ProjectController.php ← index() kirim mapPoints, show() kirim
+surveyPoints ✅
 
 app/Http/Requests/
-└── StoreSurveyPointRequest.php    ← validasi input koordinat
+└── StoreSurveyPointRequest.php ✅
 
 app/Models/
-└── SurveyPoint.php                ← model baru
+├── SurveyPoint.php ✅
+└── NetworkLeg.php ← sudah ada sebelumnya, dipakai overlay ✅
+
+database/seeders/
+└── MapDemoSeeder.php ← seeder dev/test khusus map (baru) ✅
 
 database/migrations/
-└── 2026_xx_xx_create_survey_points_table.php
-```
+└── (migration survey_points sudah dijalankan) ✅
 
-### Layer Tanggung Jawab
+tests/e2e/
+└── map.spec.ts ← 3 test e2e (baru) ✅
 
-```
-Vue (SurveyMap.vue)
-  ↓ props: points[], legs[], readings[]
-  ↓ merender MapLibre GL canvas
-  ↓ menggabungkan data dari backend ke layer visual
+### Layer Tanggung Jawab (tidak berubah dari desain awal)
+Vue (SurveyMap.vue / ProjectsOverviewMap.vue)
+↓ props: points[], mapPoints[], elevations[], networkLegs[]
+↓ merender MapLibre GL canvas (lazy-loaded)
+↓ menggabungkan data dari backend ke layer visual
+↓ (baru) join elevations by point_name untuk popup
+↓ (baru) join networkLegs from_point/to_point ke survey_points untuk overlay
 
 SurveyPointController
-  ↓ menerima request CRUD koordinat
-  ↓ validasi via StoreSurveyPointRequest
-  ↓ tidak ada kalkulasi engineering di sini
+↓ menerima request CRUD koordinat + import batch
+↓ validasi via StoreSurveyPointRequest
+↓ tidak ada kalkulasi engineering di sini
 
 ProjectController (existing)
-  ↓ tambahkan surveyPoints ke props Show.vue
-  ↓ eager load: $project->load(['readings', 'computedElevations', 'surveyPoints', ...])
-```
-
+↓ show() — kirim surveyPoints, elevations, networkLegs ke Show.vue
+↓ index() — kirim mapPoints (agregat AVG lat/lng per proyek) ke Index.vue
 ---
 
-## API Routes
+## API Routes (aktual, terverifikasi via `route:list`)
 
 ```php
-// routes/web.php — tambahkan dalam group auth middleware
-Route::prefix('projects/{project}')->group(function () {
-
-    // Survey Points (koordinat GPS)
-    Route::get('survey-points', [SurveyPointController::class, 'index'])
-         ->name('survey-points.index');
-    Route::post('survey-points', [SurveyPointController::class, 'store'])
-         ->name('survey-points.store');
-    Route::put('survey-points/{point}', [SurveyPointController::class, 'update'])
-         ->name('survey-points.update');
-    Route::delete('survey-points/{point}', [SurveyPointController::class, 'destroy'])
-         ->name('survey-points.destroy');
-
-    // Import GPX — parsing di frontend, endpoint ini hanya simpan hasil parse
-    Route::post('survey-points/import', [SurveyPointController::class, 'importBatch'])
-         ->name('survey-points.import');
-
-});
+// routes/web.php
+Route::get   ('/projects/{project}/survey-points',         [SurveyPointController::class, 'index'])->name('survey-points.index');
+Route::post  ('/projects/{project}/survey-points',         [SurveyPointController::class, 'store'])->name('survey-points.store');
+Route::put   ('/projects/{project}/survey-points/{point}', [SurveyPointController::class, 'update'])->name('survey-points.update');
+Route::delete('/projects/{project}/survey-points/{point}', [SurveyPointController::class, 'destroy'])->name('survey-points.destroy');
+Route::post  ('/projects/{project}/survey-points/import',  [SurveyPointController::class, 'importBatch'])->name('survey-points.import');
 ```
 
-### Response Format SurveyPointController
+Pemanggilan dari Vue **selalu** lewat Ziggy `route()` helper, mengikuti pola
+yang sudah dipakai di seluruh `Show.vue` — jangan pakai template string URL manual:
 
-```json
-// GET /projects/{id}/survey-points
-{
-  "data": [
-    {
-      "id": 1,
-      "point_name": "BM-A",
-      "lat": "-8.12345678",
-      "lng": "115.12345678",
-      "point_type": "BM",
-      "elevation_ref": null,
-      "gps_accuracy_m": null,
-      "source": "manual",
-      "notes": null
-    }
-  ]
-}
+```js
+router.post(route('survey-points.store', props.project.id), body, { ... })
+router.put(route('survey-points.update', { project: props.project.id, point: id }), body, { ... })
+router.delete(route('survey-points.destroy', { project: props.project.id, point: id }), { ... })
 ```
 
 ---
 
-## Komponen Vue: SurveyMap.vue
+## Komponen Vue: SurveyMap.vue — SELESAI ✅ (semua sub-fitur Fase 2 lengkap)
 
-### Props Contract
+### Props Contract (implementasi aktual)
 
 ```ts
-// Props yang diterima SurveyMap.vue
 interface Props {
-  // Titik dengan koordinat GPS (dari survey_points)
   points: Array<{
     id: number
     point_name: string
@@ -252,397 +403,343 @@ interface Props {
     source: 'manual' | 'gpx' | 'picker'
     notes: string | null
   }>
-
-  // Elevasi hasil kalkulasi (dari computed_elevations, join by point_name)
   elevations: Array<{
+    sequence_no: number
     point_name: string
-    adjusted_elevation: number | null
+    hi: number | null
     raw_elevation: number
     correction: number
+    adjusted_elevation: number
     cumulative_distance: number
+    // ...field lain dari ComputedElevation, lihat database.md
   }>
-
-  // Network legs untuk overlay jaring (dari network_legs)
   networkLegs: Array<{
     from_point: string
     to_point: string
+    observed_delta_h: number
     distance_m: number
-    corrected_delta_h: number | null
+    corrected_delta_h: number
+    residual: number
   }>
-
-  // Status proyek (untuk warna network legs)
   projectStatus: 'draft' | 'calculated' | 'accepted' | 'rejected'
-
-  // Apakah user boleh edit koordinat
-  canEdit: boolean
+  canEdit: boolean                // sekarang selalu true dari Show.vue
 }
 
 // Emits
-// 'point-clicked' → { point_name: string }
-// 'request-add-point' → { lat: number, lng: number } (klik peta kosong)
+// 'point-clicked' → { point_name: string }             (jalan, TIDAK dipakai lagi untuk popup — lihat catatan)
+// 'request-add-point' → { lat, lng }                    (di-emit tapi belum ditangani parent — utang teknis)
+// 'edit-point-requested' → SurveyPoint (objek penuh)     (BARU — dari tombol "Edit Koordinat" di popup)
 ```
 
-### Visual Specification
+**Semua sub-fitur berikut sudah selesai dan terverifikasi visual:**
 
-**Marker per tipe titik:**
+1. **Render marker** warna sesuai `point_type`, `fitBounds` otomatis, toggle
+   Peta/Satelit — (sudah selesai sejak Fase 2 inti sesi sebelumnya)
+2. **Polyline urutan pengukuran** — garis merah (`#DC2626`, width 3, dashed)
+   menghubungkan titik sesuai `sequence_no` yang di-lookup dari `elevations`
+   (bukan prop terpisah — fungsi `buildOrderedCoords()` membangun `Map`
+   `point_name → sequence_no` dari `props.elevations`, lalu urutkan
+   `props.points` berdasarkan itu). Titik tanpa entri di `elevations` (atau
+   tanpa koordinat) otomatis ter-skip.
+3. **Popup info marker** — `maplibregl.Popup` bawaan, dipasang via
+   `.setPopup()` ke tiap marker. Isi: nama titik, tipe (label Indonesia),
+   elevasi terkoreksi, koreksi, jarak kumulatif, koordinat, akurasi GPS,
+   tombol "Edit Koordinat". Data elevasi diambil via `findElevation(pointName)`
+   yang mengambil entri **terakhir** (sequence_no tertinggi) kalau ada
+   beberapa entri untuk nama titik yang sama (umum terjadi — satu titik bisa
+   punya baris BS dan FS terpisah di `computed_elevations`). Tombol Edit
+   meng-emit `edit-point-requested` dengan objek `point` (SurveyPoint) penuh,
+   ditangani `Show.vue` via `@edit-point-requested="openEditPoint"`.
+4. **Network legs overlay** — garis GeoJSON `LineString` per leg, warna
+   mengikuti `NETWORK_LEG_COLOR[props.projectStatus]` (draft=abu, calculated=biru,
+   accepted=hijau, rejected=merah). Koordinat leg didapat lookup `from_point`/
+   `to_point` terhadap `props.points` — leg yang salah satu titiknya belum
+   punya koordinat otomatis di-skip (tidak error, hanya tidak digambar).
 
-| Tipe | Ikon | Warna | Ukuran |
-| ---- | ---- | ----- | ------ |
-| BM   | ⭐ bintang | Kuning `#F59E0B` | 36px |
-| TP   | ● lingkaran | Biru `#3B82F6` | 28px |
-| IS   | ▲ segitiga | Hijau `#10B981` | 24px |
-| CP   | ◆ berlian | Ungu `#8B5CF6` | 28px |
+**Robust terhadap toggle Peta/Satelit** — lihat entri bug fix "`map.setStyle()`
++ `once('style.load', ...)` race condition" di `docs/claude.md`. Kedua layer
+GeoJSON (`route-line`, `network-legs-line`) di-render ulang via
+`waitForStyleReady()` setelah setiap toggle mode.
 
-**Polyline urutan pengukuran:**
-- Warna: Abu-abu `#6B7280`
-- Lebar: 2px
-- Dash: tidak (garis penuh)
-- Urutan: ikut `sequence_no` dari `readings`
+### Marker Visual Spec (masih sama dari sesi sebelumnya — belum ada ikon custom)
 
-**Network legs overlay:**
-- Accepted: Hijau `#10B981`, lebar 3px
-- Rejected: Merah `#EF4444`, lebar 3px
-- Draft/Calculated: Abu-abu `#9CA3AF`, lebar 2px, dashed
+| Tipe | Warna implementasi sekarang | Catatan |
+| ---- | ----- | ------- |
+| BM   | `#F59E0B` (kuning) | bentuk lingkaran, belum bintang |
+| TP   | `#3B82F6` (biru) | bentuk lingkaran |
+| IS   | `#10B981` (hijau) | bentuk lingkaran, belum segitiga |
+| CP   | `#8B5CF6` (ungu) | bentuk lingkaran, belum berlian |
 
-**Popup saat klik marker:**
-```
-┌─────────────────────────────┐
-│ ● BM-A                 [×] │
-│ ─────────────────────────── │
-│ Tipe        : Benchmark     │
-│ Elevasi     : 100.0000 m    │
-│ Koreksi     : +0.000133 m   │
-│ Jarak kumulatif: 0.000 m    │
-│ Koordinat   : -8.1234, 115.1234 │
-│ Akurasi GPS : ±2.5 m        │
-│ ─────────────────────────── │
-│ [Edit Koordinat]            │
-└─────────────────────────────┘
-```
-
-### Behaviour
-
-```
-Saat map dimuat:
-1. Render semua marker dari props.points
-2. Buat polyline dari urutan readings (hanya titik yang ada di points)
-3. Overlay network legs jika props.networkLegs.length > 0
-4. fitBounds ke semua marker dengan padding 60px
-5. Jika tidak ada marker → tampilkan Indonesia center (lat: -2.5, lng: 118.0), zoom: 5
-
-Saat klik marker:
-1. Buka popup dengan data elevasi dari props.elevations (join by point_name)
-2. Emit 'point-clicked'
-
-Saat klik peta kosong (canEdit = true):
-1. Emit 'request-add-point' dengan lat/lng posisi klik
-2. Parent (Show.vue) buka LocationPicker dengan koordinat pre-filled
-
-Saat props.points berubah (reactivity):
-1. Hapus semua marker lama
-2. Render ulang marker baru
-3. Update polyline
-```
+Bentuk ikon custom (bintang/segitiga/berlian via SVG) **masih belum
+diimplementasikan** — tetap utang teknis kosmetik, lihat bagian bawah.
 
 ---
 
-## Komponen Vue: LocationPicker.vue
+## Komponen Vue: LocationPicker.vue — SELESAI ✅ (+ marker referensi baru)
 
-Modal untuk input/edit koordinat satu titik. Berisi mini-map MapLibre yang bisa diklik.
-
-### Props & Emits
+### Props & Emits (implementasi aktual)
 
 ```ts
 interface Props {
-  pointName: string          // nama titik yang sedang diedit
-  initialLat: number | null  // null = kosong (tambah baru)
+  pointName: string
+  initialLat: number | null
   initialLng: number | null
   pointType: 'BM' | 'TP' | 'IS' | 'CP'
+  referencePoints: Array<{ point_name: string, lat: number, lng: number, ... }>  // BARU
 }
-
-// Emits
-// 'save' → { lat: number, lng: number, point_type: string, notes: string }
-// 'cancel' → void
+// Emits: 'save' → { lat, lng, point_type, notes }
+// Emits: 'cancel' → void
 ```
 
-### Fitur LocationPicker
+### Fitur yang sudah jalan
+1. Mini-map interaktif — klik untuk set lokasi, marker draggable
+2. Input manual lat/lng dengan `step="0.00000001"`
+3. Search lokasi via Nominatim (`countrycodes=id`, `Accept-Language: id`)
+4. Tombol "Gunakan Lokasi Saya" — Browser Geolocation API
+5. Koordinat realtime saat hover di peta
+6. Toggle Peta/Satelit (sama seperti `SurveyMap.vue`)
+7. **BARU — Marker referensi:** semua titik di `props.referencePoints` yang
+   **bukan** titik yang sedang diedit (`p.point_name !== props.pointName`)
+   ditampilkan sebagai marker kecil (12px, abu-abu `#94A3B8`, opacity 0.75)
+   dengan label nama titik di bawahnya, non-draggable, tidak bisa diklik.
+   Tujuan: user tahu posisi relatif titik lain saat menempatkan koordinat
+   titik baru. Dipanggil `Show.vue` dengan `:reference-points="surveyPoints"`.
+   Fungsi: `renderReferenceMarkers()`, dipanggil ulang saat map `load` (marker
+   DOM tidak perlu re-render saat toggle style, sama seperti marker utama di
+   `SurveyMap.vue`). Cleanup di `onBeforeUnmount`.
 
-1. **Mini-map interaktif** — klik di mana saja untuk set lokasi, marker bisa di-drag
-2. **Input manual** — field lat/lng yang bisa diketik langsung
-3. **Search lokasi** — input teks → query Nominatim → zoom ke hasil
-4. **Tombol "Gunakan Lokasi Saya"** — Browser Geolocation API (gratis, tanpa API key)
-5. **Koordinat realtime** — tampilkan lat/lng saat mouse hover di peta
-
-### Nominatim Search (Geocoder Gratis)
-
-```js
-// Contoh implementasi search di LocationPicker.vue
-const searchLocation = async (query) => {
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&countrycodes=id`
-  const res = await fetch(url, {
-    headers: { 'Accept-Language': 'id' }
-  })
-  return await res.json()
-  // Response: [{ display_name, lat, lon, ... }]
-}
-
-// Wajib: tambahkan User-Agent header atau referer agar tidak diblok Nominatim
-// Nominatim usage policy: max 1 request/detik, tidak untuk batch geocoding massal
-```
+Dipasang di `Show.vue` lewat `v-if="showLocationPicker"`, dipicu dari tombol
+"+ Tambah Koordinat" (state baru), tombol "Edit" di daftar titik (state
+existing dengan id), atau tombol "Edit Koordinat" di popup marker peta
+(state existing, via `@edit-point-requested`).
 
 ---
 
-## Komponen Vue: GpxImportModal.vue
+## Komponen Vue: GpxImportModal.vue — SELESAI ✅ (tidak berubah sesi ini)
 
-Modal untuk upload dan parse file GPX dari GPS handheld.
-
-### Alur Import
-
-```
-User upload .gpx file
-  ↓
-Parse di browser menggunakan gpxparser (npm)
-  ↓
-Ekstrak waypoints: { name, lat, lon, ele, time }
-  ↓
-Tampilkan tabel preview dengan checkbox
-  ↓
-Cocokkan nama waypoint dengan point_name di readings (auto-suggest)
-  ↓
-User konfirmasi → POST /projects/{id}/survey-points/import
-  ↓
-Backend simpan batch ke survey_points
-  ↓
-Inertia reload → map update
-```
-
-### Format GPX yang Didukung
-
-```xml
-<!-- Waypoint format (dari GPS handheld seperti Garmin, Trimble) -->
-<wpt lat="-8.12345678" lon="115.12345678">
-  <name>BM-A</name>
-  <ele>100.5</ele>          <!-- elevation GPS, opsional -->
-  <hdop>2.5</hdop>          <!-- akurasi horizontal, opsional -->
-  <time>2024-01-15T08:30:00Z</time>
-</wpt>
-```
-
-### Validasi GPX
-
-- File harus berekstensi `.gpx`
-- Maksimal 500 waypoints per file
-- Setiap waypoint harus memiliki `name`, `lat`, dan `lon`
-- `lat` range: -90 s/d 90 | `lng` range: -180 s/d 180
-- Jika `name` waypoint tidak cocok dengan readings → tetap bisa diimpor, ditandai "tidak terhubung"
-
----
-
-## Integrasi dengan Show.vue (Tab Peta)
-
-### Perubahan pada ProjectController::show()
-
-```php
-// Tambahkan surveyPoints ke props yang dikirim ke Show.vue
-public function show(Project $project): Response
-{
-    $project->load([
-        'readings',
-        'computedElevations',
-        'activityLogs',
-        'networkLegs',
-        'surveyPoints',       // ← tambahan baru
-    ]);
-
-    return Inertia::render('Projects/Show', [
-        // ... existing props ...
-        'surveyPoints' => $project->surveyPoints,
-    ]);
-}
-```
-
-### Tab "Peta" di Show.vue
-
-```
-Tab order (yang ada sekarang):
-[Bacaan] [Elevasi] [Grafik] [Aktivitas] [Jaring]
-
-Setelah ditambah:
-[Bacaan] [Elevasi] [Grafik] [Peta] [Aktivitas] [Jaring]
-```
-
-Konten tab Peta:
-```
-┌──────────────────────────────────────────────────────────┐
-│ [🗺 Peta Survei]          [+ Tambah Titik] [📁 Import GPX] │
-│ ──────────────────────────────────────────────────────── │
-│                                                          │
-│   [MAP CANVAS — full width, height: 500px]              │
-│   - Marker BM/TP/IS/CP                                   │
-│   - Polyline urutan pengukuran                           │
-│   - Network legs overlay (jika ada)                      │
-│   - Popup saat klik                                      │
-│                                                          │
-│ ──────────────────────────────────────────────────────── │
-│ [Legenda]  ⭐ BM  ● TP  ▲ IS  ◆ CP                      │
-│            — Jalur ukur   ── Network leg                 │
-│ ──────────────────────────────────────────────────────── │
-│ Titik dengan koordinat: 4 dari 6 titik                   │
-│                                                          │
-│ Titik BM-A  lat: -8.1234  lng: 115.1234  [Edit] [Hapus] │
-│ Titik TP-1  lat: -8.1256  lng: 115.1289  [Edit] [Hapus] │
-│ Titik TP-2  lat: -8.1278  lng: 115.1301  [Edit] [Hapus] │
-│ Titik BM-B  lat: -8.1290  lng: 115.1345  [Edit] [Hapus] │
-│                                                          │
-│ Titik tanpa koordinat:                                   │
-│ Titik AWAL-1  [+ Tambah Koordinat]                       │
-│ Titik AWAL-2  [+ Tambah Koordinat]                       │
-└──────────────────────────────────────────────────────────┘
-```
-
----
-
-## Overview Map di Projects/Index.vue
-
-Peta kecil di halaman daftar proyek yang menampilkan semua proyek user
-berdasarkan rata-rata koordinat titik-titiknya.
-
-### Behaviour
-
-```
-Saat halaman Index dimuat:
-1. Ambil rata-rata lat/lng dari survey_points per proyek
-2. Proyek tanpa survey_points → tidak muncul di peta
-3. Marker per proyek: warna sesuai status (draft=abu, accepted=hijau, rejected=merah)
-4. Klik marker → navigasi ke Projects/Show proyek tersebut
-5. Peta ditampilkan di atas tabel daftar proyek, tinggi 280px
-```
-
-### Props untuk Index map
+### Props & Emits (implementasi aktual)
 
 ```ts
-// Dikirim dari ProjectController::index()
-interface ProjectMapPoint {
-  project_id: number
-  project_name: string
-  status: string
-  center_lat: number   // AVG(lat) dari survey_points proyek ini
-  center_lng: number   // AVG(lng)
-  point_count: number  // jumlah titik dengan koordinat
+interface Props {
+  projectId: number | string
+  knownPointNames: string[]   // dari uniquePointNames di Show.vue, untuk matching
 }
+// Emits: 'imported' → void   (setelah submit sukses)
+// Emits: 'cancel' → void
 ```
 
-### Query untuk center koordinat
+### Alur
+User upload .gpx file
+↓
+Parse di browser via gpxparser (readAsText + FileReader)
+↓
+Filter waypoint: wajib punya name + lat [-90,90] + lng [-180,180]
+↓ (invalid → masuk skippedCount, ditampilkan sebagai info, bukan error blocking)
+Cap di 500 waypoint (MAX_WAYPOINTS)
+↓
+Tampilkan tabel preview dengan checkbox (default semua tercentang)
+↓
+Cocokkan wp.name terhadap knownPointNames → kolom status "Terhubung ke bacaan" / "Tidak terhubung"
+↓
+guessPointType(name) — tebak BM/CP/IS dari prefix nama, default TP
+↓
+User klik "Impor N Titik" → router.post(route('survey-points.import', projectId), { points: [...] })
+↓
+Backend simpan batch (SurveyPointController::importBatch)
+↓
+Inertia reload otomatis → marker baru muncul di peta + daftar titik
 
-```php
-// Di ProjectController::index()
-$mapPoints = Project::where('user_id', auth()->id())
-    ->whereHas('surveyPoints')
-    ->with(['surveyPoints' => fn($q) => $q->select('project_id', 'lat', 'lng')])
-    ->get()
-    ->map(fn($p) => [
-        'project_id'   => $p->id,
-        'project_name' => $p->name,
-        'status'       => $p->status,
-        'center_lat'   => $p->surveyPoints->avg('lat'),
-        'center_lng'   => $p->surveyPoints->avg('lng'),
-        'point_count'  => $p->surveyPoints->count(),
-    ]);
-```
+**Terverifikasi manual:** upload file GPX random dari internet, waypoint
+dengan nama tidak cocok ditandai "Tidak terhubung" (perilaku benar), submit
+sukses, marker muncul di peta dan daftar "Titik dengan koordinat".
 
 ---
 
-## SurveyPointController — Spesifikasi Lengkap
+## Komponen Vue: ProjectsOverviewMap.vue — SELESAI ✅ (tidak berubah sesi ini)
+
+Mini-map di halaman `Projects/Index.vue`, menampilkan 1 marker per proyek
+berdasarkan rata-rata koordinat `survey_points` proyek tersebut.
+
+### Props
+
+```ts
+interface Props {
+  mapPoints: Array<{
+    project_id: number
+    project_name: string
+    status: 'draft' | 'calculated' | 'accepted' | 'rejected'
+    center_lat: number
+    center_lng: number
+    point_count: number
+  }>
+}
+```
+
+### Warna marker berdasarkan status (implementasi aktual)
+
+| Status | Warna |
+| ------ | ----- |
+| `draft` | `#9CA3AF` abu-abu |
+| `calculated` | `#3B82F6` biru |
+| `accepted` | `#10B981` hijau |
+| `rejected` | `#EF4444` merah |
+
+**Catatan:** skema warna ini identik dengan `NETWORK_LEG_COLOR` di
+`SurveyMap.vue` — kalau salah satunya diubah ke depan, pertimbangkan
+mengubah keduanya supaya konsisten di seluruh aplikasi.
+
+### Behaviour
+- Klik marker → `router.visit(route('projects.show', project_id))`
+- Proyek tanpa `survey_points` tidak muncul di peta (backend filter `whereHas`)
+- `fitBounds` otomatis ke semua marker, atau center Indonesia jika kosong
+- Div pembungkus punya `v-if="mapPoints.length"` — mini-map (dan chunk JS-nya)
+  hanya render kalau ada minimal 1 proyek dengan koordinat
+
+### `ProjectController::index()` — implementasi aktual
 
 ```php
-class SurveyPointController extends Controller
+public function index(Request $request): Response
 {
-    // GET /projects/{project}/survey-points
-    // Mengembalikan semua titik koordinat proyek
-    public function index(Project $project): JsonResponse
+    $projects = $request->user()
+        ->projects()
+        ->orderByDesc('survey_date')
+        ->get([
+            'id', 'name', 'location', 'survey_date',
+            'benchmark_name', 'benchmark_elevation',
+            'tolerance_class', 'adjustment_method',
+            'closure_error', 'allowed_tolerance',
+            'total_distance_km', 'status',
+        ]);
 
-    // POST /projects/{project}/survey-points
-    // Simpan satu titik koordinat baru
-    // Body: { point_name, lat, lng, point_type, notes, source }
-    public function store(Project $project, StoreSurveyPointRequest $request): RedirectResponse
+    $mapPoints = $request->user()
+        ->projects()
+        ->whereHas('surveyPoints')
+        ->with(['surveyPoints' => fn ($q) => $q->select('project_id', 'lat', 'lng')])
+        ->get(['id', 'name', 'status'])
+        ->map(fn ($p) => [
+            'project_id'   => $p->id,
+            'project_name' => $p->name,
+            'status'       => $p->status,
+            'center_lat'   => (float) $p->surveyPoints->avg('lat'),
+            'center_lng'   => (float) $p->surveyPoints->avg('lng'),
+            'point_count'  => $p->surveyPoints->count(),
+        ])
+        ->values();
 
-    // PUT /projects/{project}/survey-points/{point}
-    // Update koordinat titik
-    public function update(Project $project, SurveyPoint $point, StoreSurveyPointRequest $request): RedirectResponse
-
-    // DELETE /projects/{project}/survey-points/{point}
-    // Hapus koordinat titik (tidak hapus readings)
-    public function destroy(Project $project, SurveyPoint $point): RedirectResponse
-
-    // POST /projects/{project}/survey-points/import
-    // Import batch dari hasil parse GPX di frontend
-    // Body: { points: [{ point_name, lat, lng, point_type, elevation_ref, gps_accuracy_m }] }
-    public function importBatch(Project $project, Request $request): RedirectResponse
+    return Inertia::render('Projects/Index', compact('projects', 'mapPoints'));
 }
 ```
 
-### StoreSurveyPointRequest Rules
+**Masih tanpa test PHPUnit otomatis** — lihat "Utang Teknis" di bawah.
 
-```php
-return [
-    'point_name' => ['required', 'string', 'max:50'],
-    'lat'        => ['required', 'numeric', 'between:-90,90'],
-    'lng'        => ['required', 'numeric', 'between:-180,180'],
-    'point_type' => ['required', 'in:BM,TP,IS,CP'],
-    'notes'      => ['nullable', 'string', 'max:500'],
-    'source'     => ['required', 'in:manual,gpx,picker'],
-    'elevation_ref'   => ['nullable', 'numeric'],
-    'gps_accuracy_m'  => ['nullable', 'numeric', 'min:0'],
-];
+---
+
+## Komponen Vue: MapLegend.vue — SELESAI ✅ (BARU, sesi terakhir)
+
+Komponen kecil mandiri, menampilkan legenda ikon di bawah `SurveyMap.vue`
+pada tab Peta. Tidak lazy-load-dependent terhadap komponen peta lain, tapi
+tetap di-lazy-load lewat `defineAsyncComponent` sesuai konvensi.
+
+### Props
+
+```ts
+interface Props {
+  projectStatus: 'draft' | 'calculated' | 'accepted' | 'rejected'
+  showNetworkLegend: boolean   // true kalau networkLegs.length > 0
+}
+```
+
+### Isi legenda
+- 4 baris warna marker: BM (kuning), TP (biru), IS (hijau), CP (ungu)
+- Garis merah putus-putus: "Jalur pengukuran" (selalu tampil)
+- Garis solid warna sesuai status proyek: "Jalur jaring (draft/terhitung/
+  diterima/ditolak)" — **hanya muncul kalau `showNetworkLegend` true**
+
+Dipasang di `Show.vue`:
+```html
+<MapLegend
+  :project-status="project.status"
+  :show-network-legend="networkLegs.length > 0"
+/>
 ```
 
 ---
 
-## Testing Standards untuk Map Feature
+## Tab "Peta" di Show.vue — implementasi aktual (updated)
+Tab order aktual:
+[Bacaan] [Elevasi] [Jaring] [Peta] [Grafik] [Aktivitas]
+Konten tab Peta (implementasi aktual sekarang, sudah lengkap):
+┌──────────────────────────────────────────────────────────┐
+│ Peta Survei [📁 Import GPX] │
+│ N dari M titik punya koordinat │
+│ ──────────────────────────────────────────────────────── │
+│ [SurveyMap.vue — toggle Peta/Satelit, marker, popup, │
+│ polyline merah, network overlay warna status] │
+│ ──────────────────────────────────────────────────────── │
+│ [MapLegend.vue — legenda warna marker + jenis garis] │
+│ ──────────────────────────────────────────────────────── │
+│ Titik dengan koordinat │ Titik tanpa koordinat │
+│ BM-01 (TP) -x.xx, y.yy [Edit][Hapus] │ BM-02 [+ Tambah Koordinat] │
+│ TP-1 (TP) -x.xx, y.yy [Edit][Hapus] │ TP-6 [+ Tambah Koordinat] │
+└──────────────────────────────────────────────────────────┘
+### State & fungsi di `Show.vue` (untuk debugging, updated)
 
-### Feature Tests (PHPUnit)
+```js
+const showLocationPicker = ref(false)
+const editingPoint = ref(null)   // { id: number|null, point_name, lat, lng, point_type }
+const showGpxImport = ref(false)
 
+const pointsWithCoords = computed(() => props.surveyPoints)
+const pointsWithoutCoords = computed(() => {
+  const covered = new Set(props.surveyPoints.map(p => p.point_name))
+  return uniquePointNames.value.filter(n => !covered.has(n))
+})
+
+function openAddPoint(name) { editingPoint.value = { id: null, point_name: name, lat: null, lng: null, point_type: 'TP' }; showLocationPicker.value = true }
+function openEditPoint(point) { editingPoint.value = { id: point.id, point_name: point.point_name, lat: Number(point.lat), lng: Number(point.lng), point_type: point.point_type }; showLocationPicker.value = true }
+function savePoint(payload) { /* router.post survey-points.store atau router.put survey-points.update tergantung editingPoint.id */ }
+function deletePoint(point) { /* confirm() lalu router.delete survey-points.destroy */ }
 ```
-tests/Feature/
-└── SurveyPointTest.php
 
-Test cases wajib:
-- test_can_store_survey_point_with_valid_coordinates
-- test_rejects_survey_point_with_lat_out_of_range
-- test_rejects_survey_point_with_lng_out_of_range
-- test_enforces_unique_point_name_per_project
-- test_can_update_survey_point_coordinates
-- test_can_delete_survey_point_without_affecting_readings
-- test_can_import_batch_survey_points
-- test_import_skips_duplicate_point_names (upsert behavior)
-- test_cannot_access_other_users_survey_points
-- test_project_show_includes_survey_points_in_props
-- test_project_index_includes_map_points
+`openEditPoint` sekarang dipanggil dari **dua tempat**: tombol "Edit" di
+daftar titik (biasa), **dan** event `@edit-point-requested` dari
+`SurveyMap.vue` (dari tombol "Edit Koordinat" di popup marker). Karena
+`SurveyMap.vue` meng-emit objek `SurveyPoint` penuh (bukan cuma `point_name`),
+signature `openEditPoint(point)` tetap kompatibel tanpa perlu diubah.
+
+`<LocationPicker>` sekarang menerima prop tambahan:
+```html
+<LocationPicker
+  v-if="showLocationPicker"
+  :point-name="editingPoint.point_name"
+  :initial-lat="editingPoint.lat"
+  :initial-lng="editingPoint.lng"
+  :point-type="editingPoint.point_type"
+  :reference-points="surveyPoints"
+  @save="savePoint"
+  @cancel="closeLocationPicker"
+/>
 ```
 
-### Unit Tests
-
-Tidak diperlukan unit test khusus untuk map feature — logika kalkulasi tidak
-ada di sini. Semua koordinat hanya disimpan dan dikembalikan apa adanya.
-
-### E2E Tests (Playwright)
-
-```
-tests/e2e/map.spec.ts
-
-Test cases:
-- map tab renders without survey points → shows empty state
-- can open location picker and save coordinates
-- survey points appear as markers after save
-- can edit existing survey point coordinates
-- can delete survey point
-- gpx import modal opens and parses file
-- imported gpx points appear on map
+`<SurveyMap>` sekarang menerima handler tambahan:
+```html
+<SurveyMap
+  :points="surveyPoints"
+  :elevations="elevations"
+  :network-legs="networkLegs"
+  :project-status="project.status"
+  :can-edit="true"
+  @edit-point-requested="openEditPoint"
+/>
+<MapLegend
+  :project-status="project.status"
+  :show-network-legend="networkLegs.length > 0"
+/>
 ```
 
 ---
 
-## Precision Policy untuk Koordinat
+## Precision Policy untuk Koordinat (tidak berubah)
 
 | Data              | PostgreSQL Type  | Presisi       | Setara di Bumi     |
 | ----------------- | ---------------- | ------------- | ------------------ |
@@ -651,10 +748,6 @@ Test cases:
 | Elevasi GPS ref   | NUMERIC(12,4)    | 0.0001 m      | 0.1 mm             |
 | Akurasi GPS       | NUMERIC(6,3)     | 0.001 m       | 1 mm               |
 
-**Catatan:** Presisi `NUMERIC(12,8)` jauh melampaui kemampuan GPS handheld
-biasa (±1-3 meter untuk GPS consumer, ±0.01-0.1 meter untuk GPS geodetik).
-Ini disengaja untuk future-proofing jika GPS geodetik digunakan.
-
 **Koordinat bukan `FLOAT`** — sesuai presisi policy keseluruhan GeoLevel.
 Gunakan `NUMERIC` di PostgreSQL dan cast `decimal:8` di Eloquent.
 
@@ -662,88 +755,121 @@ Gunakan `NUMERIC` di PostgreSQL dan cast `decimal:8` di Eloquent.
 
 ## Batasan dan Catatan Penting
 
-### OpenStreetMap Tile Usage Policy
+### CARTO Basemaps Usage Policy
+- Wajib tampilkan attribution `© OpenStreetMap contributors © CARTO` (sudah
+  otomatis muncul dari kontrol attribution bawaan MapLibre)
+- Gratis selamanya untuk pemakaian standar, tanpa API key
 
-- **Wajib** tampilkan attribution: `© OpenStreetMap contributors`
-- Jangan lakukan tile fetching massal atau crawling
-- Untuk production dengan traffic tinggi → pertimbangkan self-host tiles dengan
-  [OpenMapTiles](https://openmaptiles.org/) (gratis untuk self-host)
-- Stadia Maps free tier: 200.000 tile requests/bulan — cukup untuk development
-  dan penggunaan terbatas
+### Esri World Imagery Usage Policy
+- Wajib tampilkan attribution Esri (sudah otomatis muncul)
+- Gratis untuk pemakaian standar tanpa API key/signup
+- Untuk skala sangat besar/komersial berat, Esri secara teknis
+  merekomendasikan developer account — tidak relevan untuk skala aplikasi ini
+- Resolusi citra tidak seseragam Google Earth — bagus di kota besar, bisa
+  lebih buram di area pedesaan/terpencil
 
 ### Nominatim Usage Policy
-
 - Maksimum **1 request per detik**
-- Wajib cantumkan `User-Agent` atau `Referer` header
-- Jangan gunakan untuk geocoding massal (ribuan query sekaligus)
-- Untuk volume tinggi → gunakan Photon (self-hosted geocoder, gratis)
+- Wajib cantumkan `User-Agent` atau `Referer` header (sudah dipenuhi lewat
+  header `Accept-Language` + browser default `Referer`)
+- Jangan gunakan untuk geocoding massal
 
 ### Browser Geolocation API
-
-- Hanya berfungsi di HTTPS (sudah terpenuhi di `geolevel.local`)
-- User harus izinkan akses lokasi di browser
-- Akurasi bergantung perangkat user — bisa dari GPS, WiFi, atau IP
+- Hanya berfungsi di HTTPS (terpenuhi di `geolevel.local`)
+- Akurasi bergantung perangkat user
 
 ### Koordinat Independen dari Pipeline Kalkulasi
-
 Koordinat GPS **tidak mempengaruhi** kalkulasi elevasi. Pipeline sipat datar
 tetap berjalan dari `readings` saja. `survey_points` murni untuk visualisasi.
-Ini adalah keputusan arsitektur yang disengaja — koordinat bisa diinput kapan
-saja tanpa mengganggu data ukur.
+
+### OPcache / stale code saat development lokal — pelajaran penting
+
+Setup lokal proyek ini pakai Nginx + PHP-FPM (bukan `php artisan serve`), jadi
+perubahan file `.php` **tidak selalu langsung terlihat** tanpa restart PHP-FPM,
+tergantung konfigurasi OPcache.
+
+**Prosedur wajib setelah setiap patch backend yang tidak langsung terlihat efeknya:**
+1. `grep` isi file di disk untuk pastikan patch benar-benar masuk — **jangan
+   asumsikan command yang "sepertinya jalan" benar-benar jalan**.
+2. Kalau file di disk sudah benar tapi HTTP response masih lama:
+   `sudo systemctl restart php8.5-fpm`
+3. Kalau masih belum berubah: `php artisan optimize:clear`
+4. Verifikasi paling akurat: `curl`/`view-source:` HTML mentah, bukan cuma
+   tampilan visual browser.
+
+### PostgreSQL bisa mati setelah restart WSL/Windows
+
+Dicek di awal sesi terakhir — semua e2e Playwright gagal serentak karena
+`SQLSTATE[08006] Connection refused`. Ini murni operasional (bukan bug
+kode), tapi polanya khas dan penting dikenali: kalau *semua* test gagal
+sekaligus (bukan cuma satu-dua terkait perubahan terakhir), curigai
+infrastruktur dulu:
+```bash
+sudo service postgresql status
+sudo service postgresql start   # kalau mati
+```
+Detail lengkap: lihat `docs/claude.md` → "Known Fixes Applied".
+
+### e2e test jalan di atas database dev, bukan database test terisolasi
+
+`playwright.config.ts` → `baseURL: 'https://geolevel.local'` menunjuk ke
+environment dev (`.env` → `DB_DATABASE=geolevel`), **bukan** `geolevel_test`
+yang dipakai PHPUnit. Konsekuensi: state database berubah permanen setiap
+kali developer testing manual lewat browser, dan bisa membuat e2e test
+berikutnya gagal karena asumsi state tidak lagi terpenuhi (bukan karena bug).
+
+**Wajib re-seed sebelum `npm run test:e2e`** kalau sempat ada testing manual
+sebelumnya:
+```bash
+php artisan db:seed --class=CanonicalSurveySeeder
+php artisan db:seed --class=MapDemoSeeder
+```
+Kedua seeder idempotent, aman dijalankan ulang kapan saja.
 
 ---
 
-## Urutan Implementasi (Fase)
+## Utang Teknis (Technical Debt) — belum dikerjakan
 
-### Fase 1 — Foundation ✅ SELESAI
-**Target: Koordinat bisa disimpan dan diedit**
+| # | Item | Dampak jika tidak dikerjakan |
+| - | ---- | ----------------------------- |
+| 1 | **Export PDF untuk peta** — gambar peta belum masuk ke field book PDF sama sekali | **Prioritas tertinggi sekarang.** Tampilan visual sudah matang (polyline, popup, overlay, legenda semua selesai) — sengaja ditunda sampai kondisi ini tercapai, sekarang saatnya dikerjakan. Tantangan teknis: MapLibre GL adalah WebGL canvas, DomPDF tidak bisa merender WebGL — kemungkinan perlu screenshot canvas (`map.getCanvas().toDataURL()`) dikirim sebagai base64 ke backend, atau pakai static map image API terpisah dari tile provider yang sama |
+| 2 | **Bentuk ikon custom per tipe titik** (bintang BM, segitiga IS, berlian CP — bukan lingkaran semua) | Kosmetik saja, tidak mengganggu fungsi |
+| 3 | **Handler `request-add-point`** (klik peta kosong untuk tambah koordinat langsung) | Alur tambah koordinat sekarang hanya lewat tombol daftar, bukan klik-langsung-di-peta seperti spesifikasi awal |
+| 4 | **Test otomatis untuk `mapPoints`** di `ProjectController::index()` | **Hanya diverifikasi manual** (curl + view-source), tidak ada assertion PHPUnit |
+| 5 | Kegagalan pre-existing `survey.spec.ts:162` (tombol "PDF Jaring" tidak muncul saat status accepted) | Tidak terkait Map Feature, belum diselidiki akar masalahnya — kemungkinan terkait urutan test/state `network_std_deviation` yang butuh perataan dijalankan dulu |
+| 6 | `NetworkExportService` + `GenerateNetworkPdfExportJob` + `GenerateNetworkExcelExportJob` | Dead code — tidak dipakai controller (sudah diganti sync-stream), tapi masih ada file-nya dan test-nya (`NetworkExportControllerTest`, 12 test) tetap hijau. Aman dibiarkan, tapi kandidat cleanup |
 
-- [x] Migration `survey_points`
-- [x] Model `SurveyPoint` + relasi ke `Project`
-- [x] `SurveyPointController` (index, store, update, destroy, importBatch)
-- [x] `StoreSurveyPointRequest`
-- [x] Update `ProjectController::show()` — include `surveyPoints` di props
-- [x] Update `Project` model — tambah `hasMany(SurveyPoint::class)`
-- [x] Route baru di `web.php`
-- [x] Feature tests `SurveyPointTest.php` — 11/11 PASS
+### Sudah selesai (dulu item utang teknis, sekarang tuntas — dicatat untuk histori)
 
-### Fase 2 — Map Visualization 🔄 SEBAGIAN SELESAI
-**Target: Peta tampil dengan marker dan polyline**
+Item-item berikut **sebelumnya** ada di daftar utang teknis, sekarang sudah
+selesai per sesi terakhir — dihapus dari tabel di atas:
+- ~~Polyline urutan pengukuran~~ ✅ selesai (garis merah, robust terhadap toggle)
+- ~~Popup info saat klik marker~~ ✅ selesai (elevasi, koreksi, jarak kumulatif, tombol Edit)
+- ~~Network legs overlay~~ ✅ selesai (warna sesuai status proyek)
+- ~~`MapLegend.vue`~~ ✅ selesai
+- ~~`tests/e2e/map.spec.ts`~~ ✅ selesai (3 test)
 
-- [x] `npm install maplibre-gl` (v5.24.0)
-- [x] `SurveyMap.vue` — MapLibre canvas + marker (polyline + popup belum, lihat catatan bawah)
-- [ ] `MapLegend.vue` — legenda ikon
-- [x] Tab "Peta" di `Show.vue` — integrasi `SurveyMap.vue`
-- [ ] `LocationPicker.vue` — modal picker dengan mini-map
-- [ ] Tombol "Tambah Koordinat" di daftar titik tanpa koordinat
-- [ ] Network legs overlay di `SurveyMap.vue`
-- [ ] E2E tests `map.spec.ts` (Fase 1 + 2)
+### Rekomendasi prioritas modernisasi berikutnya
 
-> **Catatan implementasi:** `SurveyMap.vue` versi saat ini baru render marker +
-> fitBounds otomatis + emit event klik. Polyline urutan pengukuran, popup info
-> saat klik marker, dan overlay network legs (sesuai spesifikasi di atas)
-> **belum diimplementasikan** — menyusul di lanjutan Fase 2/3.
->
-> **CSS MapLibre dimuat via CDN**, bukan lewat `import` di Vue SFC atau
-> `@import` di `resources/css/app.css` — lihat entri "Known Fixes Applied"
-> di `claude.md` untuk alasan teknisnya (konflik dengan pipeline Tailwind).
-
-### Fase 3 — GPX Import + Overview Map
-**Target: Import GPS dan peta index**
-
-- [ ] `npm install gpxparser`
-- [ ] `GpxImportModal.vue` — upload + parse + preview + konfirmasi
-- [ ] `SurveyPointController::importBatch()` — endpoint batch insert
-- [ ] Mini-map di `Projects/Index.vue`
-- [ ] Update `ProjectController::index()` — include `mapPoints` di props
-- [ ] E2E tests tambahan untuk GPX import
+1. **Export PDF peta** (item #1) — diskusikan pendekatan teknis dulu di awal
+   sesi (screenshot canvas vs static map image API) sebelum mulai implementasi,
+   karena ini keputusan arsitektur yang mempengaruhi banyak hal (ukuran file
+   PDF, kualitas gambar, dependency baru mungkin diperlukan).
+2. **Test `mapPoints`** (item #4) — murah, penting untuk mencegah regresi diam-diam.
+3. **Investigasi `survey.spec.ts:162`** (item #5) — tidak urgent tapi
+   sebaiknya tidak dibiarkan terus merah tanpa pernah diselidiki.
+4. Item #2 dan #3 (ikon custom, klik-peta-langsung) — kosmetik/UX-polish,
+   bisa dikerjakan kapan saja tanpa urgensi.
+5. Item #6 (dead code cleanup) — tidak urgent.
 
 ---
 
 ## Referensi
 
 - [MapLibre GL JS Docs](https://maplibre.org/maplibre-gl-js/docs/)
-- [OpenStreetMap Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/)
+- [MapLibre GL JS — Map#isStyleLoaded()](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#isstyleloaded)
+- [CARTO Basemaps](https://github.com/CartoDB/basemap-styles)
+- [Esri World Imagery Service](https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer)
 - [Nominatim API](https://nominatim.org/release-docs/latest/api/Search/)
 - [GPX Format Specification](https://www.topografix.com/gpx.asp)
 - [gpxparser npm](https://www.npmjs.com/package/gpxparser)
