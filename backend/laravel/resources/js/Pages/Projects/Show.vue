@@ -39,6 +39,13 @@
                 :allowed_tolerance="project.allowed_tolerance"
               />
               <template v-if="project.status === 'accepted'">
+                <!-- Mode peta untuk export PDF -->
+                <select v-model="pdfMapMode"
+                  title="Mode basemap untuk peta di PDF"
+                  class="text-xs border border-stone-300 rounded-lg px-2 py-2 text-stone-600 bg-white">
+                  <option value="street">Peta</option>
+                  <option value="satellite">Satelit</option>
+                </select>
                 <!-- PDF -->
                 <button @click="exportProject('pdf')"
                   class="inline-flex items-center gap-1.5 text-xs font-semibold border border-red-300 text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors">
@@ -949,8 +956,10 @@ async function exportNetwork(format) {
   window.location.href = route(routeName, props.project.id)
 }
 
+const pdfMapMode = ref('street')
 function exportProject(format) {
-  window.location.href = `/projects/${props.project.id}/export/${format}`
+  const query = format === 'pdf' ? `?map_mode=${pdfMapMode.value}` : ''
+  window.location.href = `/projects/${props.project.id}/export/${format}${query}`
 }
 function runLeastSquares() {
   adjustingNetwork.value = true
