@@ -36,6 +36,11 @@
   .status-calculated { background: #dbeafe; color: #1e40af; }
   .status-draft     { background: #f3f4f6; color: #374151; }
 
+  .map-section { margin-bottom: 12px; }
+  .map-section img { width: 100%; max-width: 100%; border: 1px solid #999; display: block; }
+  .map-caption { font-size: 8px; color: #777; margin-top: 3px; text-align: right; }
+  .map-empty { border: 1px dashed #ccc; padding: 14px; text-align: center; color: #999; font-size: 9px; }
+
   .footer { text-align: right; font-size: 8px; color: #888; margin-top: 10px; border-top: 1px solid #ddd; padding-top: 4px; }
 </style>
 </head>
@@ -100,6 +105,17 @@
     </div>
     @endif
   </div>
+</div>
+
+{{-- ── Peta Survei ─────────────────────────────────────────────── --}}
+<div class="section-title">Peta Survei</div>
+<div class="map-section">
+  @if($mapImageBase64)
+    <img src="{{ $mapImageBase64 }}" alt="Peta survei">
+    <div class="map-caption">Basemap: OpenStreetMap contributors, CARTO / Esri &bull; Koordinat GPS bersifat referensi visual, bukan hasil ukur sipat datar</div>
+  @else
+    <div class="map-empty">Belum ada titik koordinat (survey_points) untuk proyek ini &mdash; peta tidak ditampilkan.</div>
+  @endif
 </div>
 
 {{-- ── Data Table ───────────────────────────────────────────────── --}}
