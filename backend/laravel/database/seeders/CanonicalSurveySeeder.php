@@ -8,14 +8,16 @@ use App\Models\NetworkLeg;
 use App\Models\Reading;
 use App\Services\LevelingCalculationService;
 use App\Services\AdjustmentService;
+use App\Services\LeastSquaresAdjustmentService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
 class CanonicalSurveySeeder extends Seeder
 {
     public function __construct(
-        private LevelingCalculationService $calculator,
-        private AdjustmentService          $adjuster,
+        private LevelingCalculationService  $calculator,
+        private AdjustmentService           $adjuster,
+        private LeastSquaresAdjustmentService $networkAdjuster,
     ) {}
 
     public function run(): void
@@ -27,6 +29,17 @@ class CanonicalSurveySeeder extends Seeder
                 'password' => Hash::make('password'),
             ]
         );
+
+        // Idempotent: hapus proyek demo lama milik user ini supaya re-seed
+        // tidak menumpuk banyak project dengan nama sama (survey_date yang
+        // identik antar duplikat membuat orderByDesc('survey_date') di
+        // ProjectController::index() tidak stabil urutannya, sehingga UI
+        // bisa menampilkan duplikat lama tanpa network_std_deviation terisi
+        // alih-alih yang baru).
+        Project::where('user_id', $user->id)
+            ->whereIn('name', ['Survey Kanonikal BM-A ke BM-B', 'Survey Demo Diterima'])
+            ->get()
+            ->each(fn ($old) => $old->delete());
 
         $this->seedCanonicalProject($user);
         $this->seedAcceptedProject($user);
@@ -147,5 +160,14 @@ class CanonicalSurveySeeder extends Seeder
             'observed_delta_h' => '0.101500',
             'distance_m'       => '60.000',
         ]);
+
+        // Jalankan perataan least squares supaya network_std_deviation terisi
+        // (dibutuhkan tombol "PDF Jaring" / "Excel Jaring" di Show.vue, dan
+        // e2e test survey.spec.ts yang mengasumsikan tombol itu tampil saat
+        // status accepted).
+        $this->networkAdjuster->adjustProject(
+            project: $project->fresh(),
+            userId:  $user->id,
+        );
     }
 }
