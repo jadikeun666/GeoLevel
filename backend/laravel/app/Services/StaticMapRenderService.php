@@ -28,6 +28,30 @@ class StaticMapRenderService
     private const MAX_ZOOM = 18;
 
     /**
+     * Threshold deteksi "tile seragam" -- fraksi minimum sample pixel yang
+     * harus mirip satu sama lain (dalam toleransi warna) supaya tile itu
+     * dianggap uniform/polos. Dipakai HANYA untuk sinyal agregat tingkat
+     * peta (lihat hasLikelySparseCoverage()), TIDAK untuk mengganti tile
+     * individual -- ocean/desert asli juga uniform secara visual, jadi
+     * tidak aman untuk deteksi per-tile.
+     */
+    private const UNIFORM_TILE_PIXEL_MATCH_RATIO = 0.95;
+
+    /** Toleransi warna (per kanal RGB) saat membandingkan sample pixel. */
+    private const UNIFORM_TILE_COLOR_TOLERANCE = 6;
+
+    /**
+     * Kalau porsi tile yang berhasil fetch TAPI terdeteksi uniform/polos
+     * melewati ambang ini, renderBaseMap() menganggap area basemap
+     * kemungkinan besar minim cakupan data (lihat hasLikelySparseCoverage()).
+     */
+    private const SPARSE_COVERAGE_RATIO_THRESHOLD = 0.7;
+
+    /** State per-render, direset di awal setiap renderBaseMap(). */
+    private int $tilesFetchedCount = 0;
+    private int $tilesUniformCount = 0;
+
+    /**
      * Konversi longitude ke koordinat pixel dunia (world pixel) pada zoom tertentu.
      */
     public function lonToWorldPixelX(float $lon, int $zoom): float
@@ -232,6 +256,9 @@ class StaticMapRenderService
      */
     public function renderBaseMap(array $layout, string $mode): \GdImage
     {
+        $this->tilesFetchedCount = 0;
+        $this->tilesUniformCount = 0;
+
         $canvas = imagecreatetruecolor($layout['canvasWidth'], $layout['canvasHeight']);
         $this->fillFallbackPattern($canvas, $layout['canvasWidth'], $layout['canvasHeight']);
 
@@ -258,6 +285,11 @@ class StaticMapRenderService
                     continue;
                 }
 
+                $this->tilesFetchedCount++;
+                if ($this->isTileUniform($tileImage)) {
+                    $this->tilesUniformCount++;
+                }
+
                 $destX = (int) round(($tileX * self::TILE_SIZE) - $layout['originWorldPxX']);
                 $destY = (int) round(($tileY * self::TILE_SIZE) - $layout['originWorldPxY']);
 
@@ -277,6 +309,77 @@ class StaticMapRenderService
      * jelas sebagai kondisi "tidak ada data", bukan seperti halaman kosong
      * atau bug rendering.
      */
+    /**
+     * Sample sebuah grid 8x8 titik pixel pada tile, cek berapa fraksi yang
+     * warnanya mirip satu sama lain (dalam UNIFORM_TILE_COLOR_TOLERANCE).
+     * Kembalikan true kalau fraksi itu >= UNIFORM_TILE_PIXEL_MATCH_RATIO.
+     *
+     * PENTING -- ini TIDAK berarti tile "rusak" atau "tidak valid". Laut,
+     * gurun, atau area datar luas juga bisa sampling uniform secara sah.
+     * Nilai balik method ini HANYA dipakai untuk menghitung rasio agregat
+     * di seluruh tile pada satu render (lihat hasLikelySparseCoverage()),
+     * bukan untuk memutuskan nasib tile individual ini.
+     */
+    private function isTileUniform(\GdImage $tile): bool
+    {
+        $gridSize = 8;
+        $tileWidth = imagesx($tile);
+        $tileHeight = imagesy($tile);
+
+        $samples = [];
+        for ($row = 0; $row < $gridSize; $row++) {
+            for ($col = 0; $col < $gridSize; $col++) {
+                $px = (int) (($col + 0.5) / $gridSize * $tileWidth);
+                $py = (int) (($row + 0.5) / $gridSize * $tileHeight);
+                $px = min($px, $tileWidth - 1);
+                $py = min($py, $tileHeight - 1);
+
+                $rgb = imagecolorat($tile, $px, $py);
+                $samples[] = [
+                    ($rgb >> 16) & 0xFF,
+                    ($rgb >> 8) & 0xFF,
+                    $rgb & 0xFF,
+                ];
+            }
+        }
+
+        $reference = $samples[0];
+        $matchCount = 0;
+
+        foreach ($samples as $sample) {
+            $diff = abs($sample[0] - $reference[0])
+                + abs($sample[1] - $reference[1])
+                + abs($sample[2] - $reference[2]);
+
+            if ($diff <= self::UNIFORM_TILE_COLOR_TOLERANCE * 3) {
+                $matchCount++;
+            }
+        }
+
+        return ($matchCount / count($samples)) >= self::UNIFORM_TILE_PIXEL_MATCH_RATIO;
+    }
+
+    /**
+     * Setelah renderBaseMap() dipanggil, method ini mengembalikan true kalau
+     * porsi tile yang berhasil fetch tapi terdeteksi uniform/polos melewati
+     * SPARSE_COVERAGE_RATIO_THRESHOLD -- sinyal agregat bahwa area basemap
+     * ini kemungkinan besar minim cakupan data (lokasi survei terpencil),
+     * BUKAN kepastian mutlak. Dipakai untuk menampilkan catatan advisory di
+     * PDF, bukan untuk mengubah tile yang sudah dirender.
+     *
+     * Mengembalikan false kalau belum ada tile yang berhasil di-fetch sama
+     * sekali (misal semua fetch gagal -- itu kasus fallback checkerboard
+     * yang sudah ditangani terpisah, bukan kasus "valid tapi kosong").
+     */
+    public function hasLikelySparseCoverage(): bool
+    {
+        if ($this->tilesFetchedCount === 0) {
+            return false;
+        }
+
+        return ($this->tilesUniformCount / $this->tilesFetchedCount) >= self::SPARSE_COVERAGE_RATIO_THRESHOLD;
+    }
+
     private function fillFallbackPattern(\GdImage $canvas, int $width, int $height): void
     {
         $colorLight = imagecolorallocate($canvas, 235, 235, 235);
@@ -341,6 +444,7 @@ class StaticMapRenderService
         $fillColor = imagecolorallocate($canvas, $r, $g, $b);
         $outlineColor = imagecolorallocate($canvas, 255, 255, 255);
 
+        // Semua tipe titik berbentuk lingkaran; tipe dibedakan lewat warna.
         // Outline putih digambar sedikit lebih besar di belakang lingkaran
         // warna, supaya marker tetap kontras di atas basemap satelit yang ramai.
         $outerRadius = self::MARKER_RADIUS_PX + self::OUTLINE_WIDTH_PX;

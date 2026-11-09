@@ -29,12 +29,13 @@ class ExportController extends Controller
         $computedElevations = $project->computedElevations()->orderBy('sequence_no')->get();
 
         $mapMode = $request->query('map_mode') === 'satellite' ? 'satellite' : 'street';
-        $mapImageBase64 = $this->renderMapImage($project, $mapRenderer, $mapMode);
+        $mapRender = $this->renderMapImage($project, $mapRenderer, $mapMode);
 
         $pdf = Pdf::loadView('exports.field_book', [
             'project'            => $project,
             'rows' => $computedElevations,
-            'mapImageBase64'     => $mapImageBase64,
+            'mapImageBase64'     => $mapRender['image'],
+            'mapSparseCoverage'  => $mapRender['sparseCoverage'],
         ]);
 
         ActivityLog::create([
@@ -121,16 +122,21 @@ class ExportController extends Controller
 
     /**
      * Render peta statis (basemap + marker + polyline + network legs) untuk
-     * disisipkan ke field book PDF sebagai <img> base64. Mengembalikan null
-     * kalau proyek tidak punya survey_points sama sekali -- Blade wajib
-     * skip section peta tanpa error kalau ini null.
+     * disisipkan ke field book PDF sebagai <img> base64. 'image' bernilai
+     * null kalau proyek tidak punya survey_points sama sekali -- Blade wajib
+     * skip section peta tanpa error kalau ini null. 'sparseCoverage' adalah
+     * sinyal advisory (bukan kepastian mutlak, lihat
+     * StaticMapRenderService::hasLikelySparseCoverage()) bahwa basemap
+     * kemungkinan minim cakupan data untuk lokasi ini.
+     *
+     * @return array{image: ?string, sparseCoverage: bool}
      */
-    private function renderMapImage(Project $project, StaticMapRenderService $mapRenderer, string $mapMode): ?string
+    private function renderMapImage(Project $project, StaticMapRenderService $mapRenderer, string $mapMode): array
     {
         $surveyPoints = $project->surveyPoints()->get(['point_name', 'lat', 'lng', 'point_type']);
 
         if ($surveyPoints->isEmpty()) {
-            return null;
+            return ['image' => null, 'sparseCoverage' => false];
         }
 
         $points = $surveyPoints->map(fn ($p) => [
@@ -164,10 +170,15 @@ class ExportController extends Controller
             $mapRenderer->drawMarker($canvas, $point['lat'], $point['lng'], $point['point_type'], $layout);
         }
 
+        $sparseCoverage = $mapRenderer->hasLikelySparseCoverage();
+
         ob_start();
         imagepng($canvas);
         $imageData = ob_get_clean();
 
-        return 'data:image/png;base64,' . base64_encode($imageData);
+        return [
+            'image'          => 'data:image/png;base64,' . base64_encode($imageData),
+            'sparseCoverage' => $sparseCoverage,
+        ];
     }
 }
