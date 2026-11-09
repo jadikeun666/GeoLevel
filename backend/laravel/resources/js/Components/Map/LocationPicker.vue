@@ -4,7 +4,7 @@
       <!-- Header -->
       <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200">
         <h3 class="text-sm font-bold text-slate-700">
-          {{ initialLat != null ? 'Edit' : 'Tambah' }} Koordinat — {{ pointName }}
+          {{ isNew ? 'Tambah' : 'Edit' }} Koordinat — {{ pointName }}
         </h3>
         <button @click="$emit('cancel')" class="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
       </div>
@@ -149,6 +149,7 @@ const props = defineProps({
   initialLat: { type: Number, default: null },
   initialLng: { type: Number, default: null },
   pointType:  { type: String, default: 'TP' },
+  isNew:      { type: Boolean, default: false },
   referencePoints: { type: Array, default: () => [] },
 })
 

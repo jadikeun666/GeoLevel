@@ -328,6 +328,7 @@
           :project-status="project.status"
           :can-edit="true"
           @edit-point-requested="openEditPoint"
+          @request-add-point="handleRequestAddPoint"
         />
         <MapLegend
           :project-status="project.status"
@@ -372,6 +373,7 @@
           :initial-lat="editingPoint.lat"
           :initial-lng="editingPoint.lng"
           :point-type="editingPoint.point_type"
+          :is-new="editingPoint.id == null"
           :reference-points="surveyPoints"
           @save="savePoint"
           @cancel="closeLocationPicker"
@@ -662,9 +664,21 @@ const pointsWithoutCoords = computed(() => {
   return uniquePointNames.value.filter(n => !covered.has(n))
 })
 
-function openAddPoint(name) {
-  editingPoint.value = { id: null, point_name: name, lat: null, lng: null, point_type: 'TP' }
+function openAddPoint(name, lat = null, lng = null) {
+  editingPoint.value = { id: null, point_name: name, lat, lng, point_type: 'TP' }
   showLocationPicker.value = true
+}
+
+// Dipanggil saat user klik peta kosong (event request-add-point dari SurveyMap).
+// Koordinat diambil dari posisi klik; nama titik = titik pertama yang belum
+// punya koordinat. Kalau semua titik sudah punya koordinat, beri tahu user.
+function handleRequestAddPoint({ lat, lng }) {
+  if (showLocationPicker.value) return
+  if (!pointsWithoutCoords.value.length) {
+    alert('Semua titik sudah punya koordinat.')
+    return
+  }
+  openAddPoint(pointsWithoutCoords.value[0], lat, lng)
 }
 
 function openEditPoint(point) {

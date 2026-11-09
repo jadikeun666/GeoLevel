@@ -303,7 +303,7 @@ function renderRoute() {
   }
 }
 
-function waitForStyleReady(callback, attemptsLeft = 40) {
+function waitForStyleReady(callback, deadline = performance.now() + 10000) {
   // Polling, bukan mengandalkan satu event 'style.load' — event itu
   // kadang sudah selesai fire sebelum listener sempat terpasang
   // (race condition nyata, terutama saat style sudah ter-cache browser
@@ -315,11 +315,19 @@ function waitForStyleReady(callback, attemptsLeft = 40) {
     callback()
     return
   }
-  if (attemptsLeft <= 0) {
-    console.error('Timeout menunggu style siap — polyline/network legs mungkin tidak muncul.')
+  if (performance.now() >= deadline) {
+    // isStyleLoaded() juga false selama tile sumber baru masih diunduh
+    // (koneksi lambat), padahal style sudah bisa menerima source/layer.
+    // Jadi tetap coba render alih-alih menyerah.
+    console.warn('Style belum sepenuhnya siap setelah 10 detik; mencoba render layer tetap.')
+    try {
+      callback()
+    } catch (err) {
+      console.warn('Gagal render layer setelah timeout style:', err)
+    }
     return
   }
-  requestAnimationFrame(() => waitForStyleReady(callback, attemptsLeft - 1))
+  requestAnimationFrame(() => waitForStyleReady(callback, deadline))
 }
 
 function setMapStyle(mode) {
@@ -349,6 +357,10 @@ onMounted(() => {
 
   if (props.canEdit) {
     map.on('click', (e) => {
+      // Abaikan klik yang berasal dari marker atau popup (elemen DOM di dalam
+      // container peta, klik-nya ikut bubble ke event click peta).
+      const target = e.originalEvent?.target
+      if (target?.closest?.('.maplibregl-marker, .maplibregl-popup')) return
       emit('request-add-point', { lat: e.lngLat.lat, lng: e.lngLat.lng })
     })
   }
