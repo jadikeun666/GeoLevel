@@ -20,10 +20,11 @@ GPX, jalur pengukuran, overlay jaring, dan overview peta di halaman daftar proye
 - Komponen peta (berat karena WebGL) selalu **lazy-loaded**, tidak pernah masuk
   bundle utama aplikasi
 
-**Status keseluruhan (per sesi terakhir): Fase 1, 2, dan 3 SEMUA SELESAI.**
-Satu-satunya pekerjaan besar yang tersisa adalah **export PDF untuk peta**
-(peta belum masuk ke field book), yang sengaja ditunda sampai tampilan
-visual matang — sekarang sudah matang, jadi ini prioritas sesi berikutnya.
+**Status keseluruhan (per sesi terakhir): Fase 1, 2, 3, DAN Export PDF Peta
+SEMUA SELESAI.** Gambar peta (basemap + marker + polyline + network legs)
+sekarang masuk ke field book PDF via `StaticMapRenderService` (render backend
+murni PHP GD, tanpa WebGL), dengan pilihan mode Peta/Satelit dari `Show.vue`.
+Lihat section "Export PDF Peta" di bawah untuk detail lengkap.
 
 ---
 
@@ -344,7 +345,7 @@ database/migrations/
 └── (migration survey_points sudah dijalankan) ✅
 
 tests/e2e/
-└── map.spec.ts ← 3 test e2e (baru) ✅
+└── map.spec.ts ← 5 test e2e ✅
 
 ### Layer Tanggung Jawab (tidak berubah dari desain awal)
 Vue (SurveyMap.vue / ProjectsOverviewMap.vue)
@@ -427,7 +428,7 @@ interface Props {
 
 // Emits
 // 'point-clicked' → { point_name: string }             (jalan, TIDAK dipakai lagi untuk popup — lihat catatan)
-// 'request-add-point' → { lat, lng }                    (di-emit tapi belum ditangani parent — utang teknis)
+// 'request-add-point' → { lat, lng }                    (ditangani Show.vue::handleRequestAddPoint — klik peta kosong)
 // 'edit-point-requested' → SurveyPoint (objek penuh)     (BARU — dari tombol "Edit Koordinat" di popup)
 ```
 
@@ -461,17 +462,19 @@ interface Props {
 GeoJSON (`route-line`, `network-legs-line`) di-render ulang via
 `waitForStyleReady()` setelah setiap toggle mode.
 
-### Marker Visual Spec (masih sama dari sesi sebelumnya — belum ada ikon custom)
+### Marker Visual Spec (keputusan desain: semua lingkaran, tipe dibedakan lewat warna)
 
 | Tipe | Warna implementasi sekarang | Catatan |
 | ---- | ----- | ------- |
-| BM   | `#F59E0B` (kuning) | bentuk lingkaran, belum bintang |
+| BM   | `#F59E0B` (kuning) | lingkaran, ukuran terbesar (30px) |
 | TP   | `#3B82F6` (biru) | bentuk lingkaran |
-| IS   | `#10B981` (hijau) | bentuk lingkaran, belum segitiga |
-| CP   | `#8B5CF6` (ungu) | bentuk lingkaran, belum berlian |
+| IS   | `#10B981` (hijau) | lingkaran, ukuran terkecil (20px) |
+| CP   | `#8B5CF6` (ungu) | lingkaran (24px) |
 
-Bentuk ikon custom (bintang/segitiga/berlian via SVG) **masih belum
-diimplementasikan** — tetap utang teknis kosmetik, lihat bagian bawah.
+Bentuk ikon custom (bintang/segitiga/berlian) **sengaja TIDAK dipakai**:
+sempat diimplementasikan lalu dikembalikan ke lingkaran demi kesan profesional.
+Jangan diusulkan ulang tanpa persetujuan. Aturan yang sama berlaku di
+`MapLegend.vue` dan `StaticMapRenderService::drawMarker()` (PDF).
 
 ---
 
@@ -630,7 +633,7 @@ public function index(Request $request): Response
 }
 ```
 
-**Masih tanpa test PHPUnit otomatis** — lihat "Utang Teknis" di bawah.
+Test PHPUnit: `tests/Feature/ProjectIndexMapPointsTest.php` (3 test).
 
 ---
 
@@ -828,41 +831,143 @@ Kedua seeder idempotent, aman dijalankan ulang kapan saja.
 
 ---
 
-## Utang Teknis (Technical Debt) — belum dikerjakan
+## Utang Teknis (Technical Debt)
 
-| # | Item | Dampak jika tidak dikerjakan |
-| - | ---- | ----------------------------- |
-| 1 | **Export PDF untuk peta** — gambar peta belum masuk ke field book PDF sama sekali | **Prioritas tertinggi sekarang.** Tampilan visual sudah matang (polyline, popup, overlay, legenda semua selesai) — sengaja ditunda sampai kondisi ini tercapai, sekarang saatnya dikerjakan. Tantangan teknis: MapLibre GL adalah WebGL canvas, DomPDF tidak bisa merender WebGL — kemungkinan perlu screenshot canvas (`map.getCanvas().toDataURL()`) dikirim sebagai base64 ke backend, atau pakai static map image API terpisah dari tile provider yang sama |
-| 2 | **Bentuk ikon custom per tipe titik** (bintang BM, segitiga IS, berlian CP — bukan lingkaran semua) | Kosmetik saja, tidak mengganggu fungsi |
-| 3 | **Handler `request-add-point`** (klik peta kosong untuk tambah koordinat langsung) | Alur tambah koordinat sekarang hanya lewat tombol daftar, bukan klik-langsung-di-peta seperti spesifikasi awal |
-| 4 | **Test otomatis untuk `mapPoints`** di `ProjectController::index()` | **Hanya diverifikasi manual** (curl + view-source), tidak ada assertion PHPUnit |
-| 5 | Kegagalan pre-existing `survey.spec.ts:162` (tombol "PDF Jaring" tidak muncul saat status accepted) | Tidak terkait Map Feature, belum diselidiki akar masalahnya — kemungkinan terkait urutan test/state `network_std_deviation` yang butuh perataan dijalankan dulu |
-| 6 | `NetworkExportService` + `GenerateNetworkPdfExportJob` + `GenerateNetworkExcelExportJob` | Dead code — tidak dipakai controller (sudah diganti sync-stream), tapi masih ada file-nya dan test-nya (`NetworkExportControllerTest`, 12 test) tetap hijau. Aman dibiarkan, tapi kandidat cleanup |
+**Status: semua 6 item utang teknis sebelumnya TUNTAS** (terakhir diperbarui
+2026-11-06). Tidak ada utang teknis Map Feature yang tersisa.
 
-### Sudah selesai (dulu item utang teknis, sekarang tuntas — dicatat untuk histori)
+| # | Item | Hasil |
+| - | ---- | ----- |
+| 1 | Bentuk ikon custom per tipe titik | **Dibatalkan, bukan dikerjakan.** Sempat diimplementasikan (bintang/segitiga/berlian via `clip-path` di peta dan polygon GD di PDF), lalu dikembalikan ke lingkaran atas keputusan desain: semua marker berbentuk lingkaran, tipe dibedakan hanya lewat warna (BM kuning, TP biru, IS hijau, CP ungu) supaya tampilan terkesan profesional. Ukuran BM tetap paling besar. |
+| 2 | Handler `request-add-point` | **Selesai.** Klik peta kosong membuka `LocationPicker` untuk titik pertama di daftar "tanpa koordinat" dengan lat/lng terisi dari posisi klik. Kalau semua titik sudah punya koordinat, tampil `alert`. Klik pada marker/popup diabaikan (filter `closest('.maplibregl-marker, .maplibregl-popup')`). `LocationPicker` punya prop baru `isNew` untuk judul "Tambah"/"Edit". Terbukti lewat e2e. |
+| 3 | Test otomatis `mapPoints` | **Selesai.** `tests/Feature/ProjectIndexMapPointsTest.php` (3 test): proyek tanpa titik dikecualikan, bentuk data + rata-rata lat/lng benar, hanya proyek milik user sendiri. |
+| 4 | `survey.spec.ts:162` gagal | **Selesai, akar masalah ditemukan.** Bukan bug UI: `CanonicalSurveySeeder` tidak pernah menjalankan `LeastSquaresAdjustmentService`, sehingga `network_std_deviation` tetap NULL dan tombol "PDF Jaring"/"Excel Jaring" (syarat `status=accepted` DAN `network_std_deviation != null`) memang tersembunyi. Seeder kini memanggil `adjustProject()` dan juga **idempoten** (menghapus proyek demo lama sebelum membuat ulang), karena duplikat dengan `survey_date` sama membuat urutan `orderByDesc` tidak stabil. |
+| 5 | Dead code network export | **Ternyata sudah bersih sejak sesi lama.** `NetworkExportService`, `GenerateNetworkPdfExportJob`, `GenerateNetworkExcelExportJob` tidak ada lagi dan tidak direferensikan di mana pun. Yang tersisa dan AKTIF dipakai: trait `app/Jobs/Concerns/BuildsNetworkExportData.php` (dipakai `NetworkLegController`). Catatan lama yang menyebut ketiganya masih ada adalah dokumentasi yang kedaluwarsa. |
+| 6 | Deteksi tile "valid tapi kosong" | **Selesai dengan pendekatan konservatif.** Tile seragam tidak bisa dibedakan dengan pasti dari laut/gurun yang sah, jadi tile TIDAK diganti. `StaticMapRenderService` menghitung rasio tile seragam (sampling grid 8x8, toleransi warna 6 per kanal, ambang 95% sampel mirip) dan `hasLikelySparseCoverage()` bernilai true bila >= 70% tile yang berhasil di-fetch seragam. `ExportController` meneruskannya ke Blade (`mapSparseCoverage`), yang menampilkan catatan advisory "cakupan basemap kemungkinan terbatas, coba mode Satelit". Terverifikasi: muncul untuk Kalimantan (mode Peta), tidak muncul untuk Jakarta. |
 
-Item-item berikut **sebelumnya** ada di daftar utang teknis, sekarang sudah
-selesai per sesi terakhir — dihapus dari tabel di atas:
-- ~~Polyline urutan pengukuran~~ ✅ selesai (garis merah, robust terhadap toggle)
-- ~~Popup info saat klik marker~~ ✅ selesai (elevasi, koreksi, jarak kumulatif, tombol Edit)
-- ~~Network legs overlay~~ ✅ selesai (warna sesuai status proyek)
-- ~~`MapLegend.vue`~~ ✅ selesai
-- ~~`tests/e2e/map.spec.ts`~~ ✅ selesai (3 test)
+### Hasil uji terakhir
 
-### Rekomendasi prioritas modernisasi berikutnya
+- PHPUnit: **216 test, 572 assertion**, hijau.
+- Playwright e2e: **27 test** (22 `survey.spec.ts` + 5 `map.spec.ts`), hijau.
+- `map.spec.ts` kini 5 test: polyline, toggle Peta/Satelit, titik tanpa koordinat,
+  klik peta kosong (tambah, simpan, alert), klik marker (popup, tanpa modal tambah).
 
-1. **Export PDF peta** (item #1) — diskusikan pendekatan teknis dulu di awal
-   sesi (screenshot canvas vs static map image API) sebelum mulai implementasi,
-   karena ini keputusan arsitektur yang mempengaruhi banyak hal (ukuran file
-   PDF, kualitas gambar, dependency baru mungkin diperlukan).
-2. **Test `mapPoints`** (item #4) — murah, penting untuk mencegah regresi diam-diam.
-3. **Investigasi `survey.spec.ts:162`** (item #5) — tidak urgent tapi
-   sebaiknya tidak dibiarkan terus merah tanpa pernah diselidiki.
-4. Item #2 dan #3 (ikon custom, klik-peta-langsung) — kosmetik/UX-polish,
-   bisa dikerjakan kapan saja tanpa urgensi.
-5. Item #6 (dead code cleanup) — tidak urgent.
+### Yang BELUM terverifikasi
+
+- Tampilan visual peta interaktif setelah keputusan "semua lingkaran" belum
+  dilihat langsung di browser (e2e tidak menilai bentuk/warna).
+- Test PHPUnit khusus untuk `StaticMapRenderService` (termasuk
+  `hasLikelySparseCoverage()`) belum ada; hanya diverifikasi manual lewat
+  PDF sungguhan.
 
 ---
+
+## Export PDF Peta -- StaticMapRenderService (SELESAI, sesi terakhir)
+
+### Pendekatan yang dipilih: Opsi B (redraw backend, bukan screenshot canvas)
+
+MapLibre GL merender ke WebGL canvas, yang tidak bisa dirender langsung
+oleh DomPDF. Dua opsi dipertimbangkan:
+- Opsi A -- screenshot canvas browser (map.getCanvas().toDataURL())
+  dikirim sebagai base64 ke backend sebelum request PDF.
+- Opsi B (dipilih) -- backend redraw peta dari nol (basemap tile + marker
+  + polyline + network legs) murni pakai PHP GD, tanpa menyentuh WebGL sama
+  sekali.
+
+Opsi B dipilih karena menghasilkan dokumen yang deterministik dari data
+(sama input = sama output, tidak bergantung state browser/viewport user saat
+export), lebih sesuai untuk dokumen teknis field book yang mungkin diarsipkan
+atau dijadikan bukti pengukuran resmi -- trade-off-nya adalah kompleksitas
+implementasi lebih besar (proyeksi manual, fetch tile terpisah dari frontend).
+
+### app/Services/StaticMapRenderService.php
+
+Kelas murni (bukan dipanggil via facade), diinjeksi via constructor injection
+Laravel ke ExportController::pdf(). Precision exception yang sama seperti
+LeastSquaresAdjustmentService -- operasi geometri pakai PHP float,
+input/output lat/lng tetap presisi tinggi dari database.
+
+Method publik utama:
+
+- computeLayout(array $points): array -- hitung bounding box, zoom level
+  otomatis (max zoom yang muat di kanvas 900x600 dikurangi padding), dan
+  origin pixel dunia untuk kanvas.
+- renderBaseMap(array $layout, string $mode): GdImage -- mode 'street'
+  (CARTO Voyager) atau 'satellite' (Esri World Imagery). Fetch tile raster
+  via Http facade, composite ke satu canvas GD. Fallback checkerboard
+  abu-abu kontras untuk tile yang gagal fetch.
+- drawMarker(...) -- lingkaran solid + outline putih 2px, warna sama
+  seperti SurveyMap.vue (BM kuning, TP biru, IS hijau, CP ungu).
+- drawRoute(...) -- polyline merah putus-putus urutan sequence_no, sama
+  logic seperti buildOrderedCoords() di SurveyMap.vue.
+- drawNetworkLegs(...) -- garis putus-putus warna sesuai status proyek,
+  sama seperti NETWORK_LEG_COLOR di SurveyMap.vue.
+
+Proyeksi Web Mercator (lonToWorldPixelX, latToWorldPixelY) memakai rumus
+standar yang identik dengan yang dipakai semua slippy map tile provider
+(termasuk CARTO dan Esri) -- terverifikasi presisi lewat test tinker manual.
+
+### Wiring ke ExportController::pdf()
+
+Method pdf() menerima StaticMapRenderService lewat constructor injection,
+membaca query param map_mode (default 'street', 'satellite' kalau diminta),
+memanggil private method renderMapImage() yang mengambil survey_points,
+computed_elevations (untuk urutan polyline), dan network_legs, lalu
+memanggil keempat method service di atas berurutan, dan terakhir
+imagepng() + base64_encode() untuk disisipkan sebagai
+data:image/png;base64,... ke Blade. Hasilnya null kalau proyek tidak
+punya survey_points sama sekali.
+
+### field_book.blade.php -- section "Peta Survei"
+
+Disisipkan antara "Ringkasan Penutup" dan "Tabel Data Sipat Datar". Fallback
+kotak putus-putus "Belum ada titik koordinat..." kalau mapImageBase64 null
+(proyek tanpa survey_points) -- tidak pernah error, section tetap tampil rapi.
+
+### Show.vue -- pilihan mode Peta/Satelit saat export
+
+Dropdown pdfMapMode (ref('street')) muncul di sebelah tombol PDF, hanya
+untuk status accepted. exportProject('pdf') menambahkan
+?map_mode=<mode> ke URL -- format excel/csv tidak terpengaruh.
+
+### Temuan penting: tile HTTP 200 tapi konten kosong (bukan bug)
+
+Selama debugging, ditemukan bahwa CARTO/Esri bisa mengembalikan tile dengan
+HTTP 200 dan PNG valid, tapi isinya polos/kosong untuk lokasi yang tidak
+tercakup data OpenStreetMap -- ini perilaku normal tile provider (bukan
+kegagalan fetch), sehingga tidak terdeteksi oleh fallback checkerboard
+(yang hanya aktif untuk fetch yang benar-benar gagal: HTTP error,
+exception, gagal decode).
+
+Ini penting untuk konteks survei geodetik: banyak proyek nyata berlokasi
+di area terpencil (perkebunan, tambang, irigasi pedesaan) yang minim
+ter-mapping OSM. Diverifikasi dengan koordinat proyek demo asli
+(lat -3.75, lng 116.16, Kalimantan Timur) -- dikonfirmasi juga kosong di
+openstreetmap.org langsung, bukan bug kita. Mode Satelit (Esri World
+Imagery) jauh lebih andal untuk kasus ini karena citra satelit mencakup
+seluruh permukaan bumi, tidak bergantung kontribusi komunitas seperti
+OSM/CARTO -- direkomendasikan sebagai default pilihan untuk lokasi survei
+yang diperkirakan terpencil.
+
+### Fallback checkerboard (fillFallbackPattern)
+
+Warna awal (RGB 230,230,230 flat) diganti pola checkerboard dua warna
+abu-abu (235,235,235 / 205,205,205, kotak 20px) supaya kegagalan fetch
+tile terlihat jelas sebagai kondisi "tidak ada data", bukan disalahartikan
+sebagai halaman kosong/bug rendering.
+
+### Verifikasi
+
+- Test manual end-to-end: proyek "Survey Demo Diterima" dengan koordinat
+  asli (Kalimantan, minim data OSM) DAN koordinat sementara Jakarta (banyak
+  data OSM) -- basemap, marker, polyline, network legs overlay semua
+  presisi di kedua mode (Peta/Satelit) untuk kedua lokasi.
+- 213 test PHPUnit (kini 216 setelah test mapPoints) tetap hijau tanpa perubahan -- ExportControllerTest dan
+  ProjectWorkflowTest yang menyentuh jalur pdf() tidak perlu modifikasi
+  sama sekali berkat constructor injection dan fallback null-safe.
+- Belum ada test PHPUnit khusus untuk StaticMapRenderService -- hanya
+  diverifikasi manual via tinker dan visual PDF. Kandidat penambahan test
+  di masa depan (lihat tabel Utang Teknis).
 
 ## Referensi
 

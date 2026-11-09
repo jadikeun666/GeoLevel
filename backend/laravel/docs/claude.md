@@ -156,16 +156,47 @@ pg_isready -h 127.0.0.1 -p 5432
   - `vite.config.js` — `chunkSizeWarningLimit: 1200` untuk chunk `mapStyle-*.js` (berisi `maplibre-gl`, ~1MB wajar)
   - `database/seeders/MapDemoSeeder.php` — seeder idempotent khusus dev/test map, user `mapdemo@geolevel.com`
   - `tests/e2e/map.spec.ts` — 3 test e2e, semua hijau (polyline muncul, tetap muncul setelah toggle, titik tanpa koordinat tampil terpisah)
+- **Export PDF untuk peta — SELESAI (sesi terakhir):**
+  - `app/Services/StaticMapRenderService.php` — render peta statis (basemap
+    composite + marker + polyline + network legs) murni PHP GD, tanpa WebGL.
+    Pendekatan Opsi B (redraw backend dari data), dipilih atas Opsi A
+    (screenshot canvas) demi konsistensi dokumen field book yang tidak
+    bergantung state browser user.
+  - Proyeksi Web Mercator manual (`lonToWorldPixelX`, `latToWorldPixelY`) —
+    precision exception yang sama seperti `LeastSquaresAdjustmentService`
+    (float PHP untuk kalkulasi pixel, input/output lat/lng tetap presisi tinggi).
+  - Fetch tile CARTO (mode `street`) / Esri (mode `satellite`) via `Http` facade,
+    di-composite ke satu canvas GD. Fallback checkerboard abu-abu kontras
+    kalau tile gagal fetch.
+  - `ExportController::pdf()` — inject `StaticMapRenderService`, terima
+    `?map_mode=street|satellite` dari query string, generate PNG base64,
+    kirim ke `field_book.blade.php` sebagai `mapImageBase64` (null-safe kalau
+    proyek tidak punya `survey_points`).
+  - `field_book.blade.php` — section "Peta Survei" antara Ringkasan Penutup
+    dan Tabel Data, dengan fallback rapi ("Belum ada titik koordinat...")
+    kalau `mapImageBase64` null.
+  - `Show.vue` — dropdown `pdfMapMode` (Peta/Satelit) di sebelah tombol
+    export PDF, dikirim sebagai query param saat `exportProject('pdf')`.
+  - **Temuan penting (bukan bug):** tile provider (CARTO/Esri) bisa
+    mengembalikan HTTP 200 dengan PNG valid tapi **kosong/polos** untuk
+    lokasi yang tidak tercakup data OSM (umum untuk survei di area terpencil
+    seperti perkebunan/tambang) — bukan kegagalan fetch, jadi fallback
+    checkerboard TIDAK muncul untuk kasus ini (checkerboard hanya untuk
+    fetch yang benar-benar gagal). Untuk lokasi semacam ini, mode
+    **Satelit (Esri)** jauh lebih andal karena citra satelit mencakup
+    seluruh dunia, tidak bergantung kontribusi komunitas OSM seperti CARTO.
+    Diverifikasi dengan proyek demo di Kalimantan Timur (lat -3.75,
+    lng 116.16) — mode Peta kosong, mode Satelit menampilkan hutan dengan jelas.
+  - Terverifikasi end-to-end: marker/polyline/network legs presisi di kedua
+    mode, tidak ada regresi di 213 test PHPUnit yang sudah ada.
 
 ### 🔄 Utang Teknis / Belum Selesai (lihat detail lengkap di `docs/map.md`)
-- **Export PDF untuk peta** — belum dikerjakan sama sekali, gambar peta tidak masuk ke field book PDF. **Prioritas utama sesi berikutnya**, sengaja ditunda sampai tampilan visual peta matang (baru selesai di sesi ini).
 - **Bentuk ikon custom** per tipe titik (bintang/segitiga/berlian) — sekarang semua lingkaran warna-kode, kosmetik saja
 - **Handler `request-add-point`** (klik peta kosong) — di-emit tapi tidak ditangani, alur tambah koordinat sekarang hanya lewat tombol daftar
 - **Test PHPUnit untuk `mapPoints`** di `ProjectController::index()` — hanya diverifikasi manual (curl/view-source), belum ada assertion otomatis
 - Kegagalan e2e pre-existing `survey.spec.ts:162` ("PDF Jaring" button) — tidak terkait Map Feature, belum diselidiki, lihat "Known Fixes Applied" untuk detail
 
 ### ⏳ Not Started
-- Export PDF peta (lihat di atas)
 - Lanjutan utang teknis Map Feature (lihat `docs/map.md` bagian "Utang Teknis")
 
 ---
@@ -205,7 +236,7 @@ pg_isready -h 127.0.0.1 -p 5432
 | `ClosureCheckerService`      | Closure error + tolerance check                      | ✅ Done |
 | `AdjustmentService`          | Equal / Bowditch / Least Squares (normal equations)  | ✅ Done |
 | `VisualizationService`       | Chart-ready dataset preparation                      | ✅ Done |
-| `ExportService`              | PDF / Excel / CSV orchestration                      | ✅ Done (peta belum masuk field book — lihat utang teknis) |
+| `ExportService`              | PDF / Excel / CSV orchestration                      | ✅ Done (termasuk peta di field book PDF, mode Peta/Satelit) |
 
 ---
 
@@ -812,7 +843,7 @@ CARTO Basemaps (mode Peta) + Esri World Imagery (mode Satelit), bukan
 | Model + migration | `app/Models/SurveyPoint.php` | ✅ |
 | Controller CRUD | `app/Http/Controllers/SurveyPointController.php` | ✅ |
 | `mapPoints` di index | `ProjectController::index()` | ✅ (tanpa test otomatis — utang teknis) |
-| Export PDF peta | — | ❌ **belum dikerjakan, prioritas berikutnya** |
+| Export PDF peta | `app/Services/StaticMapRenderService.php` | ✅ selesai — mode Peta/Satelit dipilih user |
 
 Semua komponen peta lazy-loaded via `defineAsyncComponent`. Detail props
 contract, database schema, precision policy, dan daftar lengkap utang teknis
@@ -832,19 +863,15 @@ Setup lokal aktif:
 - **Cek PostgreSQL jalan di awal sesi**: `sudo service postgresql status`
 
 Prioritas berikutnya (urutan disarankan):
-1. **Export PDF untuk peta** — tampilan visual sudah matang (polyline, popup,
-   network overlay, legenda semua selesai dan terverifikasi), saatnya
-   diintegrasikan ke field book PDF (`resources/views/exports/field_book.blade.php`).
-   MapLibre GL adalah WebGL/canvas — DomPDF tidak bisa merender WebGL langsung,
-   jadi kemungkinan besar butuh screenshot canvas ke gambar statis (misal
-   `map.getCanvas().toDataURL()`) yang dikirim ke backend sebagai base64,
-   atau pendekatan static map image dari tile provider. Perlu didiskusikan
-   pendekatan teknisnya di awal sesi sebelum implementasi.
-2. Test PHPUnit untuk `mapPoints` di `ProjectController::index()`
-3. Bentuk ikon custom per tipe titik (bintang/segitiga/berlian) — kosmetik
-4. Handler `request-add-point` (klik peta kosong untuk tambah koordinat langsung)
-5. Investigasi kegagalan pre-existing `survey.spec.ts:162` (tombol "PDF Jaring"
+1. Test PHPUnit untuk `mapPoints` di `ProjectController::index()`
+2. Bentuk ikon custom per tipe titik (bintang/segitiga/berlian) — kosmetik
+3. Handler `request-add-point` (klik peta kosong untuk tambah koordinat langsung)
+4. Investigasi kegagalan pre-existing `survey.spec.ts:162` (tombol "PDF Jaring"
    tidak muncul) — tidak terkait Map Feature, belum diselidiki akar masalahnya
+5. (Opsional) Deteksi tile "valid tapi kosong" di `StaticMapRenderService` —
+   sekarang hanya fetch yang benar-benar gagal yang dapat fallback
+   checkerboard; tile kosong-tapi-sukses (lihat entri di atas) tidak
+   terdeteksi. Perlu sampling pixel untuk cek uniform color per-tile.
 
 Kandidat cleanup (tidak urgent, tidak mengganggu apa pun):
 - `NetworkExportService` + `GenerateNetworkPdfExportJob` + `GenerateNetworkExcelExportJob`
