@@ -84,6 +84,7 @@ return [
 
         // Datum & koordinat
         'datum'                        => 'WGS84',
+        'earth_radius_m'               => 6371008.8,   // IUGG mean radius (meter), model bola untuk haversine
         'utm_zone_min'                 => 46,
         'utm_zone_max'                 => 54,
         'utm_central_meridian_easting' => 500000,
