@@ -107,6 +107,7 @@ return [
         'gpx_max_waypoints'     => 500,
         'route_max_vertices'    => 500,
         'waypoint_max_per_user' => 5000,
+        'waypoint_categories'   => ['generic', 'survey_marker', 'camp', 'water', 'danger', 'summit', 'parking'],
 
         // Statistik & penyederhanaan
         'stats_elevation_noise_threshold_m' => 3.0,
