@@ -7,6 +7,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReadingController;
 use App\Http\Controllers\SurveyPointController;
+use App\Http\Controllers\WaypointController;
 use Illuminate\Support\Facades\Route;
 
 // ── Landing page (welcome.blade.php) ─────────────────────────────────────
@@ -84,4 +85,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/projects/{project}/export/pdf',   [ExportController::class, 'pdf'])->name('export.pdf');
     Route::get('/projects/{project}/export/excel', [ExportController::class, 'excel'])->name('export.excel');
     Route::get('/projects/{project}/export/csv',   [ExportController::class, 'csv'])->name('export.csv');
+
+    // ── Outdoor Navigation (docs/outdoor.md) ─────────────────────────────────
+    Route::get   ('/outdoor/waypoints',            [WaypointController::class, 'index'])->name('outdoor.waypoints.index');
+    Route::post  ('/outdoor/waypoints',            [WaypointController::class, 'store'])->name('outdoor.waypoints.store');
+    Route::put   ('/outdoor/waypoints/{waypoint}', [WaypointController::class, 'update'])->name('outdoor.waypoints.update');
+    Route::delete('/outdoor/waypoints/{waypoint}', [WaypointController::class, 'destroy'])->name('outdoor.waypoints.destroy');
 });
