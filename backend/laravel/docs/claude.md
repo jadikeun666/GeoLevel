@@ -190,14 +190,19 @@ pg_isready -h 127.0.0.1 -p 5432
   - Terverifikasi end-to-end: marker/polyline/network legs presisi di kedua
     mode, tidak ada regresi di 213 test PHPUnit yang sudah ada.
 
-### 🔄 Utang Teknis / Belum Selesai (lihat detail lengkap di `docs/map.md`)
-- **Bentuk ikon custom** per tipe titik (bintang/segitiga/berlian) — sekarang semua lingkaran warna-kode, kosmetik saja
-- **Handler `request-add-point`** (klik peta kosong) — di-emit tapi tidak ditangani, alur tambah koordinat sekarang hanya lewat tombol daftar
-- **Test PHPUnit untuk `mapPoints`** di `ProjectController::index()` — hanya diverifikasi manual (curl/view-source), belum ada assertion otomatis
-- Kegagalan e2e pre-existing `survey.spec.ts:162` ("PDF Jaring" button) — tidak terkait Map Feature, belum diselidiki, lihat "Known Fixes Applied" untuk detail
+### ✅ Utang Teknis Map Feature — SEMUA TUNTAS (2026-11-06)
+Detail per item ada di `docs/map.md` bagian "Utang Teknis". Ringkasan:
+- Test PHPUnit `mapPoints` — selesai (`ProjectIndexMapPointsTest`, 3 test)
+- Klik peta kosong (`request-add-point`) — selesai, terbukti e2e
+- `survey.spec.ts:162` — akar masalah: `CanonicalSurveySeeder` tidak menjalankan perataan jaring; sudah diperbaiki dan seeder kini idempoten
+- Deteksi cakupan basemap minim — selesai sebagai catatan advisory di PDF (tile tidak diganti)
+- Dead code network export — ternyata sudah bersih sejak sesi lama
+- Ikon marker custom — DIBATALKAN atas keputusan desain: semua marker lingkaran, tipe dibedakan lewat warna. Jangan diusulkan ulang.
+
+Hasil uji terakhir: 216 PHPUnit, 27 e2e (22 survey + 5 map), hijau.
 
 ### ⏳ Not Started
-- Lanjutan utang teknis Map Feature (lihat `docs/map.md` bagian "Utang Teknis")
+- Tidak ada. Menunggu arahan fitur berikutnya.
 
 ---
 
@@ -862,18 +867,11 @@ Setup lokal aktif:
 - `~/update-hosts.sh` — update IP WSL di hosts Windows
 - **Cek PostgreSQL jalan di awal sesi**: `sudo service postgresql status`
 
-Prioritas berikutnya (urutan disarankan):
-1. Test PHPUnit untuk `mapPoints` di `ProjectController::index()`
-2. Bentuk ikon custom per tipe titik (bintang/segitiga/berlian) — kosmetik
-3. Handler `request-add-point` (klik peta kosong untuk tambah koordinat langsung)
-4. Investigasi kegagalan pre-existing `survey.spec.ts:162` (tombol "PDF Jaring"
-   tidak muncul) — tidak terkait Map Feature, belum diselidiki akar masalahnya
-5. (Opsional) Deteksi tile "valid tapi kosong" di `StaticMapRenderService` —
-   sekarang hanya fetch yang benar-benar gagal yang dapat fallback
-   checkerboard; tile kosong-tapi-sukses (lihat entri di atas) tidak
-   terdeteksi. Perlu sampling pixel untuk cek uniform color per-tile.
+Prioritas berikutnya: tidak ada utang teknis tersisa — menunggu arahan dari user.
 
-Kandidat cleanup (tidak urgent, tidak mengganggu apa pun):
-- `NetworkExportService` + `GenerateNetworkPdfExportJob` + `GenerateNetworkExcelExportJob`
-  — dead code sejak diganti sync-stream, test-nya tetap hijau
+Yang belum terverifikasi (bukan utang, tapi perlu diingat):
+- Tampilan peta interaktif setelah keputusan "semua marker lingkaran" belum dilihat langsung di browser (e2e tidak menilai bentuk/warna)
+- Belum ada test PHPUnit khusus untuk `StaticMapRenderService` (termasuk `hasLikelySparseCoverage()`)
+
+Kandidat (opsional, tidak urgent):
 - CI pipeline yang jalankan `test:e2e` otomatis
