@@ -92,6 +92,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post  ('/outdoor/waypoints',            [WaypointController::class, 'store'])->name('outdoor.waypoints.store');
     Route::put   ('/outdoor/waypoints/{waypoint}', [WaypointController::class, 'update'])->name('outdoor.waypoints.update');
     Route::delete('/outdoor/waypoints/{waypoint}', [WaypointController::class, 'destroy'])->name('outdoor.waypoints.destroy');
+    Route::post  ('/outdoor/waypoints/import',     [WaypointController::class, 'import'])->name('outdoor.waypoints.import');
 
     Route::get   ('/outdoor/tracks',         [TrackController::class, 'index'])->name('outdoor.tracks.index');
     Route::post  ('/outdoor/tracks/import',  [TrackController::class, 'import'])->name('outdoor.tracks.import');
