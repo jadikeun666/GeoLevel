@@ -7,6 +7,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReadingController;
 use App\Http\Controllers\SurveyPointController;
+use App\Http\Controllers\OutdoorController;
 use App\Http\Controllers\TrackController;
 use App\Http\Controllers\WaypointController;
 use Illuminate\Support\Facades\Route;
@@ -88,6 +89,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/projects/{project}/export/csv',   [ExportController::class, 'csv'])->name('export.csv');
 
     // ── Outdoor Navigation (docs/outdoor.md) ─────────────────────────────────
+    Route::get   ('/outdoor',                      [OutdoorController::class, 'index'])->name('outdoor.index');
     Route::get   ('/outdoor/waypoints',            [WaypointController::class, 'index'])->name('outdoor.waypoints.index');
     Route::post  ('/outdoor/waypoints',            [WaypointController::class, 'store'])->name('outdoor.waypoints.store');
     Route::put   ('/outdoor/waypoints/{waypoint}', [WaypointController::class, 'update'])->name('outdoor.waypoints.update');
@@ -98,4 +100,5 @@ Route::middleware(['auth'])->group(function () {
     Route::post  ('/outdoor/tracks/import',  [TrackController::class, 'import'])->name('outdoor.tracks.import');
     Route::delete('/outdoor/tracks/{track}', [TrackController::class, 'destroy'])->name('outdoor.tracks.destroy');
     Route::get   ('/outdoor/tracks/{track}/geometry', [TrackController::class, 'geometry'])->name('outdoor.tracks.geometry');
+    Route::get   ('/outdoor/tracks/{track}',          [TrackController::class, 'show'])->name('outdoor.tracks.show');
 });

@@ -10,6 +10,8 @@ use App\Services\TrackService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
+use Inertia\Response as InertiaResponse;
 
 class TrackController extends Controller
 {
@@ -49,6 +51,13 @@ class TrackController extends Controller
         }
 
         return response()->json(['data' => $created], 201);
+    }
+
+    public function show(Track $track): InertiaResponse
+    {
+        $this->authorize('view', $track);
+
+        return Inertia::render('Outdoor/Show', ['track' => $track]);
     }
 
     public function geometry(Track $track): JsonResponse
