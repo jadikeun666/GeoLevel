@@ -4,7 +4,6 @@ namespace Tests\Unit\Services;
 
 use App\Exceptions\GpxParseException;
 use App\Services\GpxService;
-use Illuminate\Support\Carbon;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -47,7 +46,7 @@ class GpxServiceTest extends TestCase
         $this->assertSame('Jalur 1', $track['name']);
         $this->assertCount(2, $track['points']);
         $this->assertSame('10', $track['points'][0]['ele']);
-        $this->assertInstanceOf(Carbon::class, $track['points'][0]['recorded_at']);
+        $this->assertSame('2026-01-01 00:00:00.000+00:00', $track['points'][0]['recorded_at']);
         $this->assertNull($track['points'][1]['ele']);
         $this->assertNull($track['points'][1]['recorded_at']);
     }
@@ -101,9 +100,8 @@ class GpxServiceTest extends TestCase
         ));
 
         $points = $result['tracks'][0]['points'];
-        $this->assertSame('2026-01-01 00:00:00.000', $points[0]['recorded_at']->format('Y-m-d H:i:s.v'));
-        $this->assertSame('UTC', $points[0]['recorded_at']->getTimezone()->getName());
-        $this->assertSame('2026-01-01 00:00:00.250', $points[1]['recorded_at']->format('Y-m-d H:i:s.v'));
+        $this->assertSame('2026-01-01 00:00:00.000+00:00', $points[0]['recorded_at']);
+        $this->assertSame('2026-01-01 00:00:00.250+00:00', $points[1]['recorded_at']);
     }
 
     public static function invalidDocuments(): array
@@ -118,6 +116,7 @@ class GpxServiceTest extends TestCase
             'empty string'        => [''],
             'bad time'            => [self::doc('<trk><trkseg><trkpt lat="1" lon="2"><time>bukan-waktu</time></trkpt></trkseg></trk>')],
             'bad elevation'       => [self::doc('<wpt lat="1" lon="2"><ele>tinggi</ele></wpt>')],
+            'natural language time' => [self::doc('<trk><trkseg><trkpt lat="1" lon="2"><time>tomorrow</time></trkpt></trkseg></trk>')],
         ];
     }
 

@@ -3,7 +3,8 @@
 namespace App\Services;
 
 use App\Exceptions\GpxParseException;
-use Illuminate\Support\Carbon;
+use DateTimeImmutable;
+use DateTimeZone;
 use Throwable;
 use XMLReader;
 
@@ -17,13 +18,17 @@ use XMLReader;
  *   ]
  *
  * Coordinates and elevations stay NUMERIC strings exactly as written in the
- * file (no float conversion). recorded_at is a UTC Carbon or null (GPX <time>
- * is optional). All <trkseg> of one <trk> are merged in document order.
+ * file (no float conversion). recorded_at is a UTC string 'Y-m-d H:i:s.vP' or
+ * null (GPX <time> is optional); strings, not Carbon, keep memory low for
+ * tracks of 100k points. All <trkseg> of one <trk> are merged in document order.
  * <rte> is ignored. Limits come from config('geolevel.outdoor').
  */
 class GpxService
 {
-    private const DECIMAL = '/^-?\d+(\.\d+)?$/';
+    private const DECIMAL  = '/^-?\d+(\.\d+)?$/';
+    private const ISO_TIME = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/';
+
+    private ?DateTimeZone $utc = null;
 
     public function parseFile(string $path): array
     {
@@ -210,11 +215,15 @@ class GpxService
             throw new GpxParseException("Elevasi tidak valid pada {$label} #{$index}.");
         }
 
-        $time = null;
+        $time    = null;
         $rawTime = $fields['time'] ?? '';
         if ($rawTime !== '') {
+            if (! preg_match(self::ISO_TIME, $rawTime)) {
+                throw new GpxParseException("Waktu tidak valid pada {$label} #{$index}.");
+            }
             try {
-                $time = Carbon::parse($rawTime, 'UTC')->utc();
+                $utc  = $this->utc ??= new DateTimeZone('UTC');
+                $time = (new DateTimeImmutable($rawTime, $utc))->setTimezone($utc)->format('Y-m-d H:i:s.vP');
             } catch (Throwable) {
                 throw new GpxParseException("Waktu tidak valid pada {$label} #{$index}.");
             }
