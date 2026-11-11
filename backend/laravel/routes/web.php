@@ -7,6 +7,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReadingController;
 use App\Http\Controllers\SurveyPointController;
+use App\Http\Controllers\TrackController;
 use App\Http\Controllers\WaypointController;
 use Illuminate\Support\Facades\Route;
 
@@ -91,4 +92,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post  ('/outdoor/waypoints',            [WaypointController::class, 'store'])->name('outdoor.waypoints.store');
     Route::put   ('/outdoor/waypoints/{waypoint}', [WaypointController::class, 'update'])->name('outdoor.waypoints.update');
     Route::delete('/outdoor/waypoints/{waypoint}', [WaypointController::class, 'destroy'])->name('outdoor.waypoints.destroy');
+
+    Route::get   ('/outdoor/tracks',         [TrackController::class, 'index'])->name('outdoor.tracks.index');
+    Route::post  ('/outdoor/tracks/import',  [TrackController::class, 'import'])->name('outdoor.tracks.import');
+    Route::delete('/outdoor/tracks/{track}', [TrackController::class, 'destroy'])->name('outdoor.tracks.destroy');
 });
