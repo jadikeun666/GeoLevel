@@ -13,6 +13,11 @@
           <span class="font-mono text-xs tracking-[0.2em] text-white/80 group-hover:text-white transition-colors uppercase">GeoLevel</span>
         </Link>
         <div class="flex items-center gap-4">
+          <Link
+            :href="route('outdoor.index')"
+            class="font-mono text-[11px] transition-colors px-2 py-1 rounded hover:bg-white/10"
+            :class="route().current('outdoor.*') ? 'text-white' : 'text-slate-400 hover:text-white'"
+          >Outdoor</Link>
           <span class="hidden sm:block font-mono text-[11px] text-slate-400 truncate max-w-[160px]">{{ page.props.auth?.user?.name }}</span>
           <Link
             :href="route('logout')"
