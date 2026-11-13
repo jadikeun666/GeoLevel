@@ -58,7 +58,12 @@
 
         <!-- ── Waypoint ────────────────────────────────────────── -->
         <section class="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 class="text-sm font-bold text-slate-700 mb-2">Waypoint ({{ waypoints.length }})</h2>
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="text-sm font-bold text-slate-700">Waypoint ({{ waypoints.length }})</h2>
+            <button type="button" class="text-[11px] font-semibold text-blue-600 hover:underline" @click="openCreate">+ Tambah</button>
+          </div>
+          <WaypointForm v-if="formOpen" :key="editingWaypoint?.id ?? 'new'" :waypoint="editingWaypoint" :projects="projects"
+                        class="mb-3" @saved="onWaypointSaved" @cancel="closeForm" />
           <p v-if="waypoints.length === 0" class="text-xs text-slate-400">Belum ada waypoint.</p>
           <ul class="divide-y divide-slate-100 max-h-72 overflow-auto">
             <li v-for="w in waypoints" :key="w.id" class="py-2 flex items-center gap-2"
@@ -68,6 +73,7 @@
                 <span class="block truncate text-xs font-medium text-slate-700">{{ w.name }}</span>
                 <span class="font-mono text-[11px] text-slate-400">{{ categoryLabel(w.category) }}</span>
               </button>
+              <button type="button" class="text-[11px] text-blue-600 hover:underline shrink-0" @click="openEdit(w)">Ubah</button>
               <button type="button" class="text-[11px] text-red-500 hover:underline shrink-0" @click="deleteWaypoint(w)">Hapus</button>
             </li>
           </ul>
@@ -95,6 +101,7 @@ import { Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { categoryColor, categoryLabel } from '@/Components/Outdoor/outdoorCategories'
+import WaypointForm from '@/Components/Outdoor/WaypointForm.vue'
 
 const OutdoorMap = defineAsyncComponent(() => import('@/Components/Outdoor/OutdoorMap.vue'))
 
@@ -185,6 +192,29 @@ async function importGpx(kind) {
   } finally {
     importing.value = false
   }
+}
+
+const formOpen        = ref(false)
+const editingWaypoint = ref(null)
+
+function openCreate() {
+  editingWaypoint.value = null
+  formOpen.value = true
+}
+
+function openEdit(waypoint) {
+  editingWaypoint.value = waypoint
+  formOpen.value = true
+}
+
+function closeForm() {
+  formOpen.value = false
+  editingWaypoint.value = null
+}
+
+function onWaypointSaved() {
+  closeForm()
+  router.reload({ only: ['waypoints'] })
 }
 
 async function deleteWaypoint(waypoint) {
