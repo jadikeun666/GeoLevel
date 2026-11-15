@@ -34,7 +34,7 @@ Lihat section "Export PDF Peta" di bawah untuk detail lengkap.
 | ----------------- | ----------------------------------- | ------------ | ---------- |
 | Map Library       | **MapLibre GL JS v5.24.0**         | BSD-3-Clause | Gratis     |
 | Vue wrapper       | **maplibre-gl** (langsung, no wrapper) | —        | Gratis     |
-| Tile Provider (jalan) | **CARTO Basemaps (Voyager)**   | ODbL + CARTO attribution | Gratis |
+| Tile Provider (jalan) | **CARTO Basemaps (Voyager)**   | ODbL + CARTO attribution | Gratis (API key wajib) |
 | Tile Provider (satelit) | **Esri World Imagery**       | Esri attribution | Gratis (standard usage) |
 | Geocoder/Search   | **Nominatim** (OpenStreetMap)      | ODbL         | Gratis     |
 | GPX Parser        | **gpxparser** (npm, v3.0.8)        | MIT          | Gratis     |
@@ -54,8 +54,8 @@ loading yang nyata.
 **Solusi yang dipakai sekarang:** dua tile source terpisah, dipilih lewat
 toggle "Peta" / "Satelit" di semua komponen peta:
 
-1. **CARTO Basemaps (Voyager)** — mode jalan/vektor-style, gratis selamanya,
-   tanpa API key, kirim CORS header dengan benar.
+1. **CARTO Basemaps (Voyager)** — mode jalan/vektor-style, gratis dengan API key (wajib sejak 2026-09-25, lihat `docs/claude.md`
+   bagian "CARTO Basemaps Key"), kirim CORS header dengan benar.
 2. **Esri World Imagery** — mode satelit (foto udara asli, bukan peta vektor),
    gratis untuk pemakaian standar tanpa API key, kirim CORS header dengan benar.
 
@@ -88,10 +88,10 @@ export const STREET_STYLE = {
     carto: {
       type: 'raster',
       tiles: [
-        'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png' + CARTO_KEY_QS,
+        'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png' + CARTO_KEY_QS,
+        'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png' + CARTO_KEY_QS,
+        'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png' + CARTO_KEY_QS,
       ],
       tileSize: 256,
       attribution: CARTO_ATTRIBUTION,
@@ -761,7 +761,8 @@ Gunakan `NUMERIC` di PostgreSQL dan cast `decimal:8` di Eloquent.
 ### CARTO Basemaps Usage Policy
 - Wajib tampilkan attribution `© OpenStreetMap contributors © CARTO` (sudah
   otomatis muncul dari kontrol attribution bawaan MapLibre)
-- Gratis selamanya untuk pemakaian standar, tanpa API key
+- Gratis dengan API key (wajib sejak 2026-09-25; non-komersial 5 juta tile/bulan,
+  komersial 1 juta/bulan). Tanpa key tile berwatermark "API KEY REQUIRED" (HTTP tetap 200)
 
 ### Esri World Imagery Usage Policy
 - Wajib tampilkan attribution Esri (sudah otomatis muncul)

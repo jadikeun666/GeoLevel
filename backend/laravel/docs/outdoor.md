@@ -51,7 +51,7 @@ real-time antar-pengguna, navigasi suara, unduh peta massal.
 6. **Komponen peta/WebGL wajib lazy-load** via `defineAsyncComponent`.
 7. **Layer GeoJSON wajib memakai `waitForStyleReady()`**, bukan `once('style.load')`
    (lihat `docs/claude.md` → Known Fixes).
-8. **Tile hanya dari provider gratis tanpa API key** (CARTO Voyager, Esri World Imagery).
+8. **Tile hanya dari provider gratis** (CARTO Voyager dengan key gratis `VITE_CARTO_KEY`, Esri World Imagery tanpa key).
    Jangan kembali ke `tile.openstreetmap.org` untuk MapLibre GL.
 9. **Controller tipis, logika di Service, validasi di Form Request, event-driven**
    — sama seperti arsitektur yang ada.

@@ -122,7 +122,7 @@ pg_isready -h 127.0.0.1 -p 5432
 - `ChartController` — wired to `VisualizationService`, handles `?station=` query param
 - `CrossSection` model — `HasFactory` trait added, `$fillable`, `$casts`, `project()` relation
 - `CrossSectionFactory` — default state with `station_name`, `station_distance`, `offsets` JSON array
-- Full test suite: **OK (315 tests, 859 assertions)** — zero failures (backend PHPUnit; belum ada penambahan test PHPUnit khusus map di sesi terakhir — lihat utang teknis di `docs/map.md`)
+- Full test suite: **OK (320 tests, 866 assertions)** — zero failures (backend PHPUnit; belum ada penambahan test PHPUnit khusus map di sesi terakhir — lihat utang teknis di `docs/map.md`)
 - Network export feature (PDF + Excel untuk hasil loop network least squares):
   - `app/Jobs/Concerns/BuildsNetworkExportData.php` — trait shared helper (buildAdjustedPoints, buildStats, buildConnectivity); kolom DB benar: `from_point`, `to_point`, `distance_m`, `corrected_delta_h`
   - `app/Jobs/GenerateNetworkPdfExportJob.php` — queued, pakai trait, helper methods dihapus
@@ -870,6 +870,21 @@ Hal yang perlu diingat saat debugging:
 - `recorded_at` GPX disimpan sebagai string UTC (bukan Carbon) — objek per titik membuat parse 85k titik kehabisan memori di 128M.
 - Batas PHP-FPM: upload 12M, post 14M, memory 256M.
 - Seeder demo: `php artisan db:seed --class=OutdoorDemoSeeder` (`outdoordemo@geolevel.com` / `password`); e2e: `tests/e2e/outdoor.spec.ts`.
+
+## CARTO Basemaps Key (wajib sejak 2026-09-25)
+
+CARTO tidak lagi melayani tile raster tanpa key: tanpa key, peta menampilkan watermark "API KEY REQUIRED"
+(HTTP tetap 200, jadi **tidak ada error console dan e2e tidak mendeteksinya**). Key gratis tanpa akun:
+https://www.carto.com/basemaps/apikey/ (non-komersial 5 juta tile/bulan; atribusi OSM + CARTO wajib tampil).
+
+- Frontend: `VITE_CARTO_KEY` di `.env`, dibaca `resources/js/Components/Map/mapStyle.js` (`CARTO_KEY_QS`).
+  Ditanam saat build — ubah key = `npm run build` ulang.
+- Server (ekspor PDF peta): `CARTO_BASEMAPS_KEY` di `.env` → `config('geolevel.carto_basemaps_key')`
+  → `StaticMapRenderService::buildTileUrl()`. Key disamarkan (`key=***`) di log kegagalan fetch tile.
+- Esri (satelit) tidak memakai key. Kedua variabel kosong = perilaku lama (watermark), tidak error.
+- `.env.example` memuat placeholder kosong; **jangan commit key**. Produksi: isi kedua variabel lalu `~/deploy-update.sh`.
+- Gejala "peta penuh tulisan API KEY REQUIRED" = key kosong/salah di salah satu sisi, bukan bug peta.
+- CARTO menyarankan style vektor (`voyager-gl-style/style.json`) dan akan mewajibkan key vektor nanti; belum dimigrasi.
 
 ## Next Session
 
