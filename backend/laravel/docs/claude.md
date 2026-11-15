@@ -257,7 +257,7 @@ Read the relevant doc before implementing any feature:
 | `docs/exports.md`           | PDF, Excel, CSV generation                    |
 | `docs/engineering-rules.md` | Precision policy, business rules, testing     |
 | `docs/map.md`               | Map, coordinates, GPS, spatial visualization  |
-| `docs/outdoor.md`           | Outdoor: waypoint, track GPX, navigasi (ala AlpineQuest)
+| `docs/outdoor.md`           | Outdoor: waypoint, track GPX, navigasi (ala AlpineQuest) |
 
 ---
 
