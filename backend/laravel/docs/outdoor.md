@@ -518,8 +518,8 @@ dan **penyimpangan dari desain**; bila bertentangan, bagian ini yang berlaku.
 - Batas ukuran/jumlah titik/jumlah waypoint dari `config('geolevel.outdoor.*')`; batas `<wpt>` berlaku juga saat impor track.
 - Insert titik per 1000 baris dalam satu transaksi, `seq` mulai 1; `metadata.source_file` = nama file asli.
 - Statistik satu kali lewat (`TrackStatsService::fromPoints`): jarak haversine; waktu bergerak = segmen
-  dengan kecepatan >= `stats_moving_speed_min_mps` (0.3 m/s); naik/turun dengan histeresis `stats_elevation_hysteresis_m`
-  (3.0 m, inklusif — pakai nama key yang ada di config bila berbeda).
+  dengan kecepatan >= `stats_moving_speed_min_mps` (0.3 m/s); naik/turun dengan ambang `stats_elevation_noise_threshold_m`
+  (3.0 m, inklusif).
 
 ### 16.4 Endpoint geometri (tampilan)
 `GET outdoor.tracks.geometry` mengembalikan JSON: `coordinates` (`[lng, lat]`), `bbox`, `point_count`,
