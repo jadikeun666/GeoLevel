@@ -122,7 +122,7 @@ pg_isready -h 127.0.0.1 -p 5432
 - `ChartController` — wired to `VisualizationService`, handles `?station=` query param
 - `CrossSection` model — `HasFactory` trait added, `$fillable`, `$casts`, `project()` relation
 - `CrossSectionFactory` — default state with `station_name`, `station_distance`, `offsets` JSON array
-- Full test suite: **OK (213 tests, 533 assertions)** — zero failures (backend PHPUnit; belum ada penambahan test PHPUnit khusus map di sesi terakhir — lihat utang teknis di `docs/map.md`)
+- Full test suite: **OK (315 tests, 859 assertions)** — zero failures (backend PHPUnit; belum ada penambahan test PHPUnit khusus map di sesi terakhir — lihat utang teknis di `docs/map.md`)
 - Network export feature (PDF + Excel untuk hasil loop network least squares):
   - `app/Jobs/Concerns/BuildsNetworkExportData.php` — trait shared helper (buildAdjustedPoints, buildStats, buildConnectivity); kolom DB benar: `from_point`, `to_point`, `distance_m`, `corrected_delta_h`
   - `app/Jobs/GenerateNetworkPdfExportJob.php` — queued, pakai trait, helper methods dihapus
@@ -257,6 +257,7 @@ Read the relevant doc before implementing any feature:
 | `docs/exports.md`           | PDF, Excel, CSV generation                    |
 | `docs/engineering-rules.md` | Precision policy, business rules, testing     |
 | `docs/map.md`               | Map, coordinates, GPS, spatial visualization  |
+| `docs/outdoor.md`           | Outdoor: waypoint, track GPX, navigasi (ala AlpineQuest)
 
 ---
 
@@ -856,6 +857,20 @@ dengan rekomendasi prioritas: **baca `docs/map.md`**.
 
 ---
 
+## Outdoor Navigation (ringkasan — lihat `docs/outdoor.md` bagian 16 untuk detail)
+
+Fase 1 selesai: waypoint CRUD + impor GPX (waypoint/track), statistik track, geometri RDP untuk tampilan,
+halaman `/outdoor` (`Outdoor/Index`, `Outdoor/Show`) dengan `OutdoorMap` dan `WaypointForm`. Tautan "Outdoor" ada di nav utama.
+Data Outdoor terpisah total dari perhitungan sipat datar. `track_points` immutable (insert-only).
+
+Hal yang perlu diingat saat debugging:
+- Test berjalan di **SQLite** (override `phpunit.xml`): jangan pakai sintaks khusus PostgreSQL di migrasi (mis. `::jsonb`).
+- `inertia.testing.ensure_pages_exist` aktif: file Vue halaman harus ada agar test Inertia lulus.
+- `docs/` di-gitignore: commit docs dengan `git add -f`. Skrip patch jangan menimpa file `*.bak` yang ter-track.
+- `recorded_at` GPX disimpan sebagai string UTC (bukan Carbon) — objek per titik membuat parse 85k titik kehabisan memori di 128M.
+- Batas PHP-FPM: upload 12M, post 14M, memory 256M.
+- Seeder demo: `php artisan db:seed --class=OutdoorDemoSeeder` (`outdoordemo@geolevel.com` / `password`); e2e: `tests/e2e/outdoor.spec.ts`.
+
 ## Next Session
 
 Setup lokal aktif:
@@ -867,7 +882,8 @@ Setup lokal aktif:
 - `~/update-hosts.sh` — update IP WSL di hosts Windows
 - **Cek PostgreSQL jalan di awal sesi**: `sudo service postgresql status`
 
-Prioritas berikutnya: tidak ada utang teknis tersisa — menunggu arahan dari user.
+Prioritas berikutnya: Outdoor Fase 1 selesai di kode; verifikasi visual dengan GPX nyata masih
+menunggu user. Fase 2 (lihat `docs/outdoor.md` bagian 13) hanya dimulai atas persetujuan user.
 
 Yang belum terverifikasi (bukan utang, tapi perlu diingat):
 - Tampilan peta interaktif setelah keputusan "semua marker lingkaran" belum dilihat langsung di browser (e2e tidak menilai bentuk/warna)
