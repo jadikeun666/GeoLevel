@@ -13,7 +13,7 @@ nyata (mode jalan maupun citra satelit), lengkap dengan koordinat manual, import
 GPX, jalur pengukuran, overlay jaring, dan overview peta di halaman daftar proyek.
 
 **Prinsip utama:**
-- Semua komponen peta menggunakan library dan tile yang **100% gratis selamanya**
+- Semua komponen peta menggunakan library dan tile yang **gratis** (CARTO memerlukan API key gratis sejak 2026-09-25; lihat `docs/claude.md`)
 - Koordinat bersifat **opsional** — proyek tetap berfungsi penuh tanpa koordinat
 - Koordinat **terpisah** dari `readings` — disimpan di tabel `survey_points` sendiri
 - Tidak ada dependency berbayar, tidak ada API key yang membutuhkan kartu kredit
