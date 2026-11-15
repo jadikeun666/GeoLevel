@@ -1,3 +1,9 @@
+// CARTO raster tiles need a free key since 2026-09-25 (https://www.carto.com/basemaps/apikey/).
+// Set VITE_CARTO_KEY in .env; empty = no key param (tiles show an "API KEY REQUIRED" watermark).
+const CARTO_KEY_QS = import.meta.env.VITE_CARTO_KEY
+  ? `?key=${encodeURIComponent(import.meta.env.VITE_CARTO_KEY)}`
+  : ''
+
 // Shared MapLibre style configs for all map components in GeoLevel.
 //
 // STREET_STYLE uses CARTO Basemaps (Voyager) instead of tile.openstreetmap.org
@@ -27,10 +33,10 @@ export const STREET_STYLE = {
     carto: {
       type: 'raster',
       tiles: [
-        'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png' + CARTO_KEY_QS,
+        'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png' + CARTO_KEY_QS,
+        'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png' + CARTO_KEY_QS,
+        'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png' + CARTO_KEY_QS,
       ],
       tileSize: 256,
       attribution: CARTO_ATTRIBUTION,
