@@ -481,6 +481,100 @@ dan blok config bagian 3 resmi dipakai.
 - Perekaman latar belakang tidak didukung (batasan platform web).
 - Elevasi GPS rentan galat besar vs elevasi leveling — hanya informatif.
 
+## 16. Status Implementasi Fase 1 (hasil — sumber kebenaran untuk kode yang sudah ada)
+
+Bagian 1–15 adalah desain. Bagian ini mencatat apa yang benar-benar dibangun
+dan **penyimpangan dari desain**; bila bertentangan, bagian ini yang berlaku.
+
+### 16.1 Penyimpangan dari desain
+- `track_points.recorded_at` **nullable** (migrasi `2026_11_11_100000_make_track_points_recorded_at_nullable`),
+  supaya GPX tanpa `<time>` bisa diimpor. Statistik waktu (`duration_s`, `moving_time_s`) bernilai `null`
+  bila ada satu saja titik tanpa waktu; statistik elevasi `null` bila tidak ada `<ele>`.
+- `tracks` punya `INDEX(user_id)` dan `INDEX(project_id)` (tidak tertulis di bagian 5).
+- Kolom `metadata` memakai `default('{}')`, bukan `'{}'::jsonb`: test berjalan di SQLite.
+- Key config baru di `config/geolevel.php`: `earth_radius_m` (6371008.8) dan `waypoint_categories`
+  (`generic, survey_marker, camp, water, danger, summit, parking`).
+- Item Outdoor boleh tanpa proyek (`project_id` nullable). Bila terisi, akses juga lewat `ProjectPolicy`.
+
+### 16.2 Komponen backend
+- Migrasi `waypoints`, `tracks`, `track_points`; model + factory; `TrackPoint` immutable
+  (`updating` melempar `LogicException`, tanpa timestamps).
+- `OutdoorItemPolicy` didaftarkan manual di `AppServiceProvider` (`Gate::policy`) untuk `Waypoint` dan `Track`.
+- Service: `WaypointService`, `GeoMathService` (`haversine`, `simplify`), `TrackStatsService`,
+  `GpxService`, `TrackImportService`, `TrackService`. Exception: `GpxParseException`.
+- Request: `StoreWaypointRequest`, `ImportGpxRequest`.
+- Controller: `WaypointController` (JSON), `TrackController`, `OutdoorController`.
+- Nama route: `outdoor.index`; `outdoor.waypoints.{index,store,update,destroy,import}`;
+  `outdoor.tracks.{index,import,destroy,geometry,show}`.
+- Data Outdoor tidak pernah menyentuh `LevelingCalculationService`, `ClosureCheckerService`, `AdjustmentService`.
+
+### 16.3 Perilaku GPX (impor)
+- Satu `Track` per `<trk>`; semua `<trkseg>` dalam satu `<trk>` digabung berurutan. `<rte>` diabaikan.
+- Track dengan < 2 titik dilewati; bila tidak ada track tersisa, impor ditolak (`GpxParseException`).
+- Lat/lng/ele disimpan sebagai string NUMERIC (regex `/^-?\d+(\.\d+)?$/`); float hanya untuk cek rentang.
+- `recorded_at` hanya diterima bila cocok regex ISO ketat; disimpan sebagai string UTC `Y-m-d H:i:s.vP`
+  (tanpa objek Carbon per titik, demi memori).
+- Nama dipotong 100 (waypoint) / 150 (track), catatan 500. `<wpt>` tanpa nama menjadi "Waypoint N".
+- Batas ukuran/jumlah titik/jumlah waypoint dari `config('geolevel.outdoor.*')`; batas `<wpt>` berlaku juga saat impor track.
+- Insert titik per 1000 baris dalam satu transaksi, `seq` mulai 1; `metadata.source_file` = nama file asli.
+- Statistik satu kali lewat (`TrackStatsService::fromPoints`): jarak haversine; waktu bergerak = segmen
+  dengan kecepatan >= `stats_moving_speed_min_mps` (0.3 m/s); naik/turun dengan histeresis `stats_elevation_hysteresis_m`
+  (3.0 m, inklusif — pakai nama key yang ada di config bila berbeda).
+
+### 16.4 Endpoint geometri (tampilan)
+`GET outdoor.tracks.geometry` mengembalikan JSON: `coordinates` (`[lng, lat]`), `bbox`, `point_count`,
+`simplified_count`, `tolerance_m`. Penyederhanaan RDP (iteratif, jarak titik-ke-segmen, proyeksi equirectangular
+pada lintang rata-rata) dengan `simplify_tolerance_display_m` = 2 m. **Hanya untuk tampilan**; data di
+`track_points` tidak diubah dan statistik tidak dihitung dari geometri sederhana.
+
+### 16.5 Kontrak komponen frontend
+Konstanta bersama: `resources/js/Components/Outdoor/outdoorCategories.js`
+(`TRACK_COLOR` `#0EA5E9`, `CATEGORY_META`, `CATEGORY_OPTIONS`, `categoryColor`, `categoryLabel`).
+Garis track lebar 3 (terpilih 5); polyline survei tetap `#DC2626`; marker waypoint berupa lingkaran berwarna kategori.
+
+**`OutdoorMap.vue`** (lazy-loaded via `defineAsyncComponent`, memakai `waitForStyleReady()`):
+```js
+defineProps({
+  tracks:          { type: Array,   default: () => [] },
+  waypoints:       { type: Array,   default: () => [] },
+  selectedTrackId: { type: Number,  default: null },
+  fitToData:       { type: Boolean, default: true },
+  height:          { type: String,  default: '500px' },
+})
+defineEmits(['select-track', 'select-waypoint'])
+```
+
+**`WaypointForm.vue`** (mode buat bila `waypoint` null, mode ubah bila terisi; koordinat dan elevasi dikirim
+sebagai string; galat 422 ditampilkan per kolom):
+```js
+defineProps({
+  waypoint: { type: Object, default: null },
+  projects: { type: Array,  default: () => [] },
+})
+defineEmits(['saved', 'cancel'])
+```
+
+### 16.6 Batas lingkungan
+- PHP-FPM (`/etc/php/8.5/fpm/php.ini`): `upload_max_filesize` 12M, `post_max_size` 14M, `memory_limit` 256M.
+- Terukur: parse 85k titik (8,7 MB) puncak 106,5 MB; 100k titik 88,5 MB; impor 85k titik ~11 s; geometri 0,44 s.
+- Nginx `client_max_body_size` **belum diverifikasi** terhadap batas 10 MB (lihat 16.8).
+
+### 16.7 Pengujian
+- Kelas test baru: `OutdoorModelsTest`, `WaypointServiceTest`, `WaypointControllerTest`, `WaypointImportTest`,
+  `GeoMathServiceTest`, `TrackStatsServiceTest`, `GpxServiceTest`, `TrackImportTest`, `GeoMathSimplifyTest`,
+  `TrackGeometryTest`, `OutdoorPagesTest`. Suite penuh: **315 test, 859 assertion** (sebelum Outdoor: 216).
+- Seeder: `php artisan db:seed --class=OutdoorDemoSeeder` (user `outdoordemo@geolevel.com` / `password`;
+  idempoten; mandiri, tidak dipanggil dari `DatabaseSeeder`; track lewat `TrackImportService`).
+- E2E: `tests/e2e/outdoor.spec.ts` (3 tes: canvas + tanpa error, toggle Peta/Satelit, form waypoint).
+  Jalankan seeder dulu. Error console "Failed to load resource" (tile) difilter. Garis track di WebGL **tidak** dinilai e2e.
+
+### 16.8 Utang teknis & belum terverifikasi
+- Impor 85k titik ~11 s sinkron di request web; kandidat job antrean di Fase 2.
+- RDP worst-case O(n²) pada jalur sangat berliku.
+- Test berjalan di SQLite; perilaku `timestampTz(…, 3)` dan `jsonb` di PostgreSQL tidak diuji otomatis.
+- Nginx `client_max_body_size` belum dicek.
+- Kriteria "track dari file GPX nyata tampil di peta" belum diverifikasi manusia di browser (hanya data seeder sintetis).
+
 ## Referensi
 
 - `docs/map.md` — stack peta, `mapStyle.js`, pola `waitForStyleReady()`
