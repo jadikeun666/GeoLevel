@@ -200,7 +200,10 @@ class StaticMapRenderService
             return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{$zoom}/{$tileY}/{$tileX}";
         }
 
-        return "https://a.basemaps.cartocdn.com/rastertiles/voyager/{$zoom}/{$tileX}/{$tileY}.png";
+        $url = "https://a.basemaps.cartocdn.com/rastertiles/voyager/{$zoom}/{$tileX}/{$tileY}.png";
+        $key = config('geolevel.carto_basemaps_key');
+
+        return $key ? $url . '?key=' . rawurlencode((string) $key) : $url;
     }
 
     /**
@@ -218,7 +221,7 @@ class StaticMapRenderService
 
             if (! $response->successful()) {
                 \Illuminate\Support\Facades\Log::warning('StaticMapRenderService: tile fetch tidak sukses', [
-                    'url'    => $url,
+                    'url'    => preg_replace('/([?&]key=)[^&]*/', '$1***', $url),
                     'status' => $response->status(),
                     'body_preview' => substr($response->body(), 0, 200),
                 ]);

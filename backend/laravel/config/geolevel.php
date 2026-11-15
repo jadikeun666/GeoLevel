@@ -70,6 +70,10 @@ return [
     | Queue Timeouts (detik)
     |--------------------------------------------------------------------------
     */
+    // CARTO raster basemap key (free; required since 2026-09-25).
+    // https://www.carto.com/basemaps/apikey/ — empty = tiles show an "API KEY REQUIRED" watermark.
+    'carto_basemaps_key' => env('CARTO_BASEMAPS_KEY'),
+
     'queue' => [
         'recalculate_timeout' => 60,
         'export_timeout'      => 120,
