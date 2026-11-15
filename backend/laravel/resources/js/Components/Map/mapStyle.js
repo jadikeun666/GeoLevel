@@ -9,8 +9,8 @@ const CARTO_KEY_QS = import.meta.env.VITE_CARTO_KEY
 // STREET_STYLE uses CARTO Basemaps (Voyager) instead of tile.openstreetmap.org
 // because the official OSM tile server does not reliably send the
 // `Access-Control-Allow-Origin` CORS header, which MapLibre GL (WebGL-based)
-// requires to load tiles as textures. CARTO Basemaps: free forever, no API
-// key/signup required, explicit CORS support.
+// requires to load tiles as textures. CARTO Basemaps: free but an API key is
+// required since 2026-09-25 (see CARTO_KEY_QS above), explicit CORS support.
 // https://github.com/CartoDB/basemap-styles
 //
 // SATELLITE_STYLE uses Esri World Imagery — free forever, no API key/signup
