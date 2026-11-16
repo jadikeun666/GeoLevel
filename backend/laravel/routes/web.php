@@ -8,6 +8,7 @@ use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReadingController;
 use App\Http\Controllers\SurveyPointController;
 use App\Http\Controllers\OutdoorController;
+use App\Http\Controllers\TrackRecordingController;
 use App\Http\Controllers\TrackController;
 use App\Http\Controllers\WaypointController;
 use Illuminate\Support\Facades\Route;
@@ -98,6 +99,14 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get   ('/outdoor/tracks',         [TrackController::class, 'index'])->name('outdoor.tracks.index');
     Route::post  ('/outdoor/tracks/import',  [TrackController::class, 'import'])->name('outdoor.tracks.import');
+
+    // Live recording (docs/outdoor.md, bagian 6 & 8). 'active' must stay before tracks/{track}.
+    Route::get   ('/outdoor/tracks/active',          [TrackRecordingController::class, 'active'])->name('outdoor.tracks.active');
+    Route::post  ('/outdoor/tracks',                 [TrackRecordingController::class, 'store'])->name('outdoor.tracks.store');
+    Route::post  ('/outdoor/tracks/{track}/points',  [TrackRecordingController::class, 'points'])->name('outdoor.tracks.points');
+    Route::post  ('/outdoor/tracks/{track}/pause',   [TrackRecordingController::class, 'pause'])->name('outdoor.tracks.pause');
+    Route::post  ('/outdoor/tracks/{track}/resume',  [TrackRecordingController::class, 'resume'])->name('outdoor.tracks.resume');
+    Route::post  ('/outdoor/tracks/{track}/finish',  [TrackRecordingController::class, 'finish'])->name('outdoor.tracks.finish');
     Route::delete('/outdoor/tracks/{track}', [TrackController::class, 'destroy'])->name('outdoor.tracks.destroy');
     Route::get   ('/outdoor/tracks/{track}/geometry', [TrackController::class, 'geometry'])->name('outdoor.tracks.geometry');
     Route::get   ('/outdoor/tracks/{track}',          [TrackController::class, 'show'])->name('outdoor.tracks.show');
