@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\TrackFinished;
 use App\Exceptions\RecordingException;
 use App\Models\Track;
 use App\Models\TrackPoint;
@@ -130,13 +131,13 @@ class TrackRecordingService
     /** @throws RecordingException */
     public function pause(Track $track): Track
     {
-        return $this->transition($track, ['recording'], 'paused');
+        return $this->transition($track, ['recording'], 'paused')[0];
     }
 
     /** @throws RecordingException */
     public function resume(Track $track): Track
     {
-        return $this->transition($track, ['paused'], 'recording');
+        return $this->transition($track, ['paused'], 'recording')[0];
     }
 
     /**
@@ -147,21 +148,29 @@ class TrackRecordingService
      */
     public function finish(Track $track): Track
     {
-        return $this->transition($track, self::ACTIVE, 'finished', ['ended_at' => now()]);
+        [$finished, $changed] = $this->transition($track, self::ACTIVE, 'finished', ['ended_at' => now()]);
+
+        // Only a real status change announces the end; idempotent repeats stay silent.
+        if ($changed) {
+            event(new TrackFinished($finished->id, $finished->user_id, $finished->project_id));
+        }
+
+        return $finished;
     }
 
     /**
      * Idempotent: asking for the status the track already has returns it unchanged.
      *
      * @param  list<string>  $from
+     * @return array{0: Track, 1: bool}  the track and whether its status changed
      */
-    private function transition(Track $track, array $from, string $to, array $attributes = []): Track
+    private function transition(Track $track, array $from, string $to, array $attributes = []): array
     {
         return DB::transaction(function () use ($track, $from, $to, $attributes) {
             $locked = Track::whereKey($track->id)->lockForUpdate()->firstOrFail();
 
             if ($locked->status === $to) {
-                return $locked;
+                return [$locked, false];
             }
 
             if (! in_array($locked->status, $from, true)) {
@@ -170,7 +179,7 @@ class TrackRecordingService
 
             $locked->update(['status' => $to] + $attributes);
 
-            return $locked;
+            return [$locked, true];
         });
     }
 

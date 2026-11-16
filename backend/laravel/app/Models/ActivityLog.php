@@ -35,6 +35,7 @@ class ActivityLog extends Model
     const TYPE_ADJUSTMENT_RESET    = 'adjustment_reset';
     const TYPE_EXPORT_GENERATED    = 'export_generated';
     const TYPE_JOB_FAILED          = 'job_failed';
+    const TYPE_TRACK_FINISHED      = 'track_finished';
 
     // -----------------------------------------------------------------------
     // Relationships

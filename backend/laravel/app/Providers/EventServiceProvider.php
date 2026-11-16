@@ -5,10 +5,13 @@ namespace App\Providers;
 use App\Events\AdjustmentApplied;
 use App\Events\ClosureChecked;
 use App\Events\ExportGenerated;
+use App\Events\TrackFinished;
 use App\Events\SurveyRecalculated;
 use App\Listeners\LogAdjustmentApplied;
 use App\Listeners\LogClosureResult;
 use App\Listeners\LogExportGenerated;
+use App\Listeners\DispatchFinalizeTrackJob;
+use App\Listeners\LogTrackFinished;
 use App\Listeners\RunClosureCheck;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
 
@@ -29,6 +32,10 @@ class EventServiceProvider extends ServiceProvider
 
         ExportGenerated::class => [
             LogExportGenerated::class,
+        ],
+        TrackFinished::class => [
+            DispatchFinalizeTrackJob::class,
+            LogTrackFinished::class,
         ],
     ];
 
