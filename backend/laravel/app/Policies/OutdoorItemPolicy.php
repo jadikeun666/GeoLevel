@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Models\OutdoorRoute;
 use App\Models\Track;
 use App\Models\User;
 use App\Models\Waypoint;
@@ -23,22 +24,22 @@ class OutdoorItemPolicy
         return true;
     }
 
-    public function view(User $user, Waypoint|Track $item): bool
+    public function view(User $user, Waypoint|Track|OutdoorRoute $item): bool
     {
         return $this->canAccess($user, $item, 'view');
     }
 
-    public function update(User $user, Waypoint|Track $item): bool
+    public function update(User $user, Waypoint|Track|OutdoorRoute $item): bool
     {
         return $this->canAccess($user, $item, 'update');
     }
 
-    public function delete(User $user, Waypoint|Track $item): bool
+    public function delete(User $user, Waypoint|Track|OutdoorRoute $item): bool
     {
         return $this->canAccess($user, $item, 'update');
     }
 
-    private function canAccess(User $user, Waypoint|Track $item, string $projectAbility): bool
+    private function canAccess(User $user, Waypoint|Track|OutdoorRoute $item, string $projectAbility): bool
     {
         if ($item->user_id !== $user->id) {
             return false;

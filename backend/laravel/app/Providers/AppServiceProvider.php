@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\OutdoorRoute;
 use App\Models\Reading;
 use App\Models\Track;
 use App\Models\Waypoint;
@@ -26,5 +27,6 @@ class AppServiceProvider extends ServiceProvider
 
         Gate::policy(Waypoint::class, OutdoorItemPolicy::class);
         Gate::policy(Track::class, OutdoorItemPolicy::class);
+        Gate::policy(OutdoorRoute::class, OutdoorItemPolicy::class);
     }
 }

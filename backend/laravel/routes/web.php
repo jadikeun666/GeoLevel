@@ -8,6 +8,7 @@ use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReadingController;
 use App\Http\Controllers\SurveyPointController;
 use App\Http\Controllers\OutdoorController;
+use App\Http\Controllers\OutdoorRouteController;
 use App\Http\Controllers\TrackRecordingController;
 use App\Http\Controllers\TrackController;
 use App\Http\Controllers\WaypointController;
@@ -107,6 +108,12 @@ Route::middleware(['auth'])->group(function () {
     Route::post  ('/outdoor/tracks/{track}/pause',   [TrackRecordingController::class, 'pause'])->name('outdoor.tracks.pause');
     Route::post  ('/outdoor/tracks/{track}/resume',  [TrackRecordingController::class, 'resume'])->name('outdoor.tracks.resume');
     Route::post  ('/outdoor/tracks/{track}/finish',  [TrackRecordingController::class, 'finish'])->name('outdoor.tracks.finish');
+
+    // Planned routes (docs/outdoor.md, bagian 5 & 6)
+    Route::get   ('/outdoor/routes',                [OutdoorRouteController::class, 'index'])->name('outdoor.routes.index');
+    Route::post  ('/outdoor/routes',                [OutdoorRouteController::class, 'store'])->name('outdoor.routes.store');
+    Route::put   ('/outdoor/routes/{outdoorRoute}', [OutdoorRouteController::class, 'update'])->name('outdoor.routes.update');
+    Route::delete('/outdoor/routes/{outdoorRoute}', [OutdoorRouteController::class, 'destroy'])->name('outdoor.routes.destroy');
     Route::delete('/outdoor/tracks/{track}', [TrackController::class, 'destroy'])->name('outdoor.tracks.destroy');
     Route::get   ('/outdoor/tracks/{track}/geometry', [TrackController::class, 'geometry'])->name('outdoor.tracks.geometry');
     Route::get   ('/outdoor/tracks/{track}',          [TrackController::class, 'show'])->name('outdoor.tracks.show');
