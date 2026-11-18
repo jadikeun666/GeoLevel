@@ -13,8 +13,8 @@ class OutdoorRouteTest extends TestCase
 {
     use RefreshDatabase;
 
-    // Two vertices 1 degree of latitude apart: distance = R * pi/180 = 6371008.8 * pi/180.
-    private const ONE_DEGREE_M = 111194.927;
+    // Two vertices 1 degree of latitude apart: distance = R * pi/180, R = 6371008.8 (geolevel.earth_radius_m).
+    private const ONE_DEGREE_M = 111195.080;
 
     private function body(array $overrides = []): array
     {
