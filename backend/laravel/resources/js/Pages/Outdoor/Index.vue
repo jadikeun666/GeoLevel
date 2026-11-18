@@ -12,6 +12,13 @@
 
     <div class="px-6 py-5 grid gap-5 lg:grid-cols-[22rem_1fr]">
       <aside class="space-y-5 min-w-0">
+        <!-- Perekam track live (docs/outdoor.md, 17) -->
+        <section class="bg-white rounded-xl border border-slate-200 p-4">
+          <TrackRecorder :config="recordingConfig" :projects="projects"
+                         @position="onRecorderPosition" @trace="onRecorderTrace"
+                         @state="onRecorderState" @finished="onRecorderFinished" />
+        </section>
+
         <!-- ── Impor GPX ───────────────────────────────────────── -->
         <section class="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
           <h2 class="text-sm font-bold text-slate-700">Impor GPX</h2>
@@ -86,6 +93,8 @@
           :tracks="mapTracks"
           :waypoints="waypoints"
           :selected-track-id="selectedTrackId"
+          :live-trace="liveTrace"
+          :live-position="livePosition"
           height="640px"
           @select-track="selectTrack"
           @select-waypoint="id => selectedWaypointId = id"
@@ -104,11 +113,13 @@ import { categoryColor, categoryLabel } from '@/Components/Outdoor/outdoorCatego
 import WaypointForm from '@/Components/Outdoor/WaypointForm.vue'
 
 const OutdoorMap = defineAsyncComponent(() => import('@/Components/Outdoor/OutdoorMap.vue'))
+const TrackRecorder = defineAsyncComponent(() => import('@/Components/Outdoor/TrackRecorder.vue'))
 
 const props = defineProps({
   tracks:    { type: Array, default: () => [] },
   waypoints: { type: Array, default: () => [] },
   projects:  { type: Array, default: () => [] },
+  recordingConfig: { type: Object, required: true },
 })
 
 const geometries         = ref({})
@@ -227,6 +238,19 @@ async function deleteWaypoint(waypoint) {
     importMessage.value = { type: 'error', text: 'Gagal menghapus waypoint.' }
   }
 }
+
+const liveTrace    = ref([])
+const livePosition = ref(null)
+
+function onRecorderPosition(p) { livePosition.value = { lat: p.lat, lng: p.lng } }
+function onRecorderTrace(coords) { liveTrace.value = coords }
+function onRecorderState(s) {
+  if (s === 'idle') {
+    liveTrace.value = []
+    livePosition.value = null
+  }
+}
+function onRecorderFinished() { router.reload({ only: ['tracks'] }) }
 
 function formatDistance(meters) {
   if (meters === null || meters === undefined) return '—'
