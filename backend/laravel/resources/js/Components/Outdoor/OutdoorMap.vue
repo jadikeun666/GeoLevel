@@ -24,7 +24,7 @@
       </div>
     </div>
 
-    <div v-if="tracks.length === 0 && waypoints.length === 0"
+    <div v-if="tracks.length === 0 && waypoints.length === 0 && liveTrace.length === 0 && !livePosition"
          class="absolute inset-0 flex items-center justify-center bg-white/70 rounded-lg pointer-events-none">
       <p class="text-xs text-slate-400 font-mono">Belum ada track atau waypoint</p>
     </div>
@@ -42,12 +42,16 @@ import { TRACK_COLOR, categoryColor, categoryLabel } from './outdoorCategories'
 //           waypoints Array<{ id, name, lat, lng, category }>  (lat/lng NUMERIC strings)
 //           selectedTrackId Number|null, fitToData Boolean, height String
 //   emits : select-track (id), select-waypoint (id)
+//   live  : liveTrace Array<[lng, lat]>, livePosition { lat, lng } | null (docs 17.6).
+//           Parent must pass a NEW array per update (shallow watch); no auto fitBounds.
 const props = defineProps({
   tracks:          { type: Array,   default: () => [] },
   waypoints:       { type: Array,   default: () => [] },
   selectedTrackId: { type: Number,  default: null },
   fitToData:       { type: Boolean, default: true },
   height:          { type: String,  default: '500px' },
+  liveTrace:       { type: Array,   default: () => [] },
+  livePosition:    { type: Object,  default: null },
 })
 
 const emit = defineEmits(['select-track', 'select-waypoint'])
@@ -57,6 +61,10 @@ const LAYER_TRACKS    = 'outdoor-tracks-line'
 const LAYER_TRACKS_HIT = 'outdoor-tracks-hit'
 const SOURCE_WAYPOINTS = 'outdoor-waypoints'
 const LAYER_WAYPOINTS  = 'outdoor-waypoints-circle'
+const SOURCE_LIVE_TRACK = 'outdoor-live-track'
+const LAYER_LIVE_TRACK  = 'outdoor-live-track-line'
+const SOURCE_LIVE_POS   = 'outdoor-live-position'
+const LAYER_LIVE_POS    = 'outdoor-live-position-circle'
 
 const mapContainer = ref(null)
 const mapStyleMode = ref('street')
@@ -139,6 +147,57 @@ function renderAll() {
         'circle-radius': 6,
         'circle-color': ['get', 'color'],
         'circle-stroke-width': 2,
+        'circle-stroke-color': '#FFFFFF',
+      },
+    })
+  }
+
+  renderLive()
+}
+
+// Live recording overlay (docs 17.6): separate sources/layers from saved tracks.
+function renderLive() {
+  const trackData = {
+    type: 'FeatureCollection',
+    features: props.liveTrace.length >= 2
+      ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: props.liveTrace } }]
+      : [],
+  }
+  const posValid = props.livePosition
+    && Number.isFinite(Number(props.livePosition.lng))
+    && Number.isFinite(Number(props.livePosition.lat))
+  const posData = {
+    type: 'FeatureCollection',
+    features: posValid
+      ? [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [Number(props.livePosition.lng), Number(props.livePosition.lat)] } }]
+      : [],
+  }
+
+  if (map.getSource(SOURCE_LIVE_TRACK)) {
+    map.getSource(SOURCE_LIVE_TRACK).setData(trackData)
+  } else {
+    map.addSource(SOURCE_LIVE_TRACK, { type: 'geojson', data: trackData })
+    map.addLayer({
+      id: LAYER_LIVE_TRACK,
+      type: 'line',
+      source: SOURCE_LIVE_TRACK,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': TRACK_COLOR, 'line-width': 4, 'line-dasharray': [2, 1.5] },
+    })
+  }
+
+  if (map.getSource(SOURCE_LIVE_POS)) {
+    map.getSource(SOURCE_LIVE_POS).setData(posData)
+  } else {
+    map.addSource(SOURCE_LIVE_POS, { type: 'geojson', data: posData })
+    map.addLayer({
+      id: LAYER_LIVE_POS,
+      type: 'circle',
+      source: SOURCE_LIVE_POS,
+      paint: {
+        'circle-radius': 8,
+        'circle-color': TRACK_COLOR,
+        'circle-stroke-width': 3,
         'circle-stroke-color': '#FFFFFF',
       },
     })
@@ -226,6 +285,8 @@ const dataSignature = computed(() =>
 
 watch(() => props.tracks, refresh)
 watch(() => props.waypoints, refresh, { deep: true })
+watch(() => props.liveTrace, refresh)
+watch(() => props.livePosition, refresh, { deep: true })
 watch(() => props.selectedTrackId, () => {
   refresh()
   fitToSelectedTrack()
