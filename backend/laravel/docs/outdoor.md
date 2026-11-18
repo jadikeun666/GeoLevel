@@ -328,7 +328,7 @@ Aturan komponen:
   → gunakan `#0EA5E9` (biru langit), width 3, solid.
 - CSS MapLibre tetap dari CDN di `app.blade.php`.
 - Setiap kontrak props/emits baru ditulis di dokumen ini sebelum implementasi
-  (props tidak boleh diubah diam-diam).
+  (props tidak boleh diubah diam-diam). Kontrak `TrackRecorder.vue` dan perekaman live: bagian 17.
 
 ---
 
@@ -574,6 +574,111 @@ defineEmits(['saved', 'cancel'])
 - Test berjalan di SQLite; perilaku `timestampTz(…, 3)` dan `jsonb` di PostgreSQL tidak diuji otomatis.
 - Nginx `client_max_body_size` belum dicek.
 - Kriteria "track dari file GPX nyata tampil di peta" belum diverifikasi manusia di browser (hanya data seeder sintetis).
+
+## 17. Fase 2: Perekaman Live, Kontrak (2.7, ditulis sebelum implementasi)
+
+Bila bertentangan dengan bagian 7 dan 8, bagian ini yang berlaku. Tidak ada dependensi npm baru:
+IndexedDB dipakai langsung, UUID dari `crypto.randomUUID()` (HTTPS sudah terpenuhi).
+
+### 17.1 Kontrak server (sudah terbangun, 2.3 sampai 2.5)
+| Route | Body | Sukses | Galat |
+| ----- | ---- | ------ | ----- |
+| `GET outdoor.tracks.active` | – | 200 `{data: Track\|null}` | – |
+| `POST outdoor.tracks` | `{name?, project_id?}` | 201 `{data: Track}` | 409 `active_exists` (+ `track`) |
+| `POST outdoor.tracks.points` | `{client_batch_id, points[]}` | 200 `{data: hasil}` | 409 `limit_reached` / `not_active`; 422 validasi |
+| `POST outdoor.tracks.pause` / `resume` / `finish` | – | 200 `{data: Track}` | 409 `{message, reason, track}` |
+
+- `Track` = `{id, name, status, project_id, point_count, started_at (ISO 8601)}`.
+- Galat 409 berbentuk `{message, reason, track|null}`.
+- Titik: `{lat, lng, ele?, accuracy_m?, speed_mps?, heading_deg?, recorded_at}`; `recorded_at` ISO 8601 ber-zona
+  waktu (`Date.toISOString()` memenuhi); maksimum 300 titik per batch (10 x `record_batch_size`).
+- Klien hanya membaca `data.limit_reached` dari balasan batch; semua 2xx berarti batch tersimpan atau sudah pernah tersimpan.
+
+### 17.2 Props halaman
+`OutdoorController::index` menambah prop `recordingConfig` (hanya kunci ini, diambil dari `config('geolevel.outdoor')`):
+`record_min_distance_m`, `record_min_interval_s`, `record_max_accuracy_m`, `record_auto_pause_speed_mps`,
+`record_auto_pause_after_s`, `record_batch_size`, `record_batch_interval_s`, `record_use_wake_lock`,
+`track_max_points`, `offline_queue_max_points`. Komponen tidak boleh punya angka hardcode.
+
+### 17.3 Modul pendukung (`resources/js/Components/Outdoor/`)
+- `recorderFilter.js`, fungsi murni tanpa DOM (bisa diuji tanpa browser):
+  `haversineM(a, b)`, `evaluateFix(fix, lastAccepted, cfg)` mengembalikan `{accept, reason}`
+  (`reason`: `accuracy` | `distance` | `interval` | `ok`), `nextAutoPause(state, speedMps, nowMs, cfg)`.
+  Pengecualian presisi sama seperti `GeoMathService`: float JS hanya di dalam fungsi ini.
+- `recorderQueue.js`, pembungkus IndexedDB. DB `geolevel-outdoor` versi 1, dua store:
+  `buffer` (autoIncrement, index `track_id`; titik diterima yang belum dibatch) dan
+  `pending_batches` (keyPath `client_batch_id`; `{client_batch_id, track_id, created_at, points}`).
+  API: `addPoint`, `makeBatch(trackId, size)` (memindahkan titik buffer ke `pending_batches` dalam satu transaksi,
+  UUID dibuat saat itu), `listPending(trackId)`, `deletePending(id)`, `countQueued(trackId)`.
+
+### 17.4 Kontrak `TrackRecorder.vue` (lazy-loaded via `defineAsyncComponent`)
+```js
+defineProps({
+  config:   { type: Object, required: true },            // = recordingConfig (17.2)
+  projects: { type: Array,  default: () => [] },         // [{id, name}] untuk pilihan proyek saat mulai
+})
+defineEmits([
+  'position',   // { lat, lng, accuracy_m }  (number, hanya untuk tampilan), tiap fix mentah
+  'trace',      // Array<[lng, lat]> titik diterima sesi ini; maksimal 1 kali per detik
+  'state',      // 'idle'|'starting'|'recording'|'paused'|'autopaused'|'finishing'
+  'finished',   // Track payload (17.1) setelah finish sukses
+])
+```
+Statistik langsung yang ditampilkan (perkiraan klien, bukan hasil akhir): jumlah titik diterima, jarak haversine
+kumulatif, waktu berjalan, jumlah batch menunggu, status koneksi. Label UI bahasa Indonesia.
+
+### 17.5 Perilaku
+1. **Mulai:** `POST outdoor.tracks`. Jika 409 `active_exists`, tampilkan tawaran pemulihan (poin 8) memakai `track` dari galat.
+2. **Filter** (`evaluateFix`, bagian 8 poin 2): tolak jika `accuracy > record_max_accuracy_m`; titik pertama sesi
+   lolos bila akurasi baik; selanjutnya wajib jarak ke titik diterima terakhir >= `record_min_distance_m`
+   **dan** selang >= `record_min_interval_s`. `recorded_at` = `new Date(position.timestamp).toISOString()`.
+   `altitude`, `speed`, `heading` yang `null`/`NaN` dikirim sebagai `null` (bukan 0).
+3. **Auto-pause (hanya klien):** kecepatan = `coords.speed`, jika `null` dihitung dari dua fix mentah berurutan.
+   Di bawah `record_auto_pause_speed_mps` selama `record_auto_pause_after_s` berarti `autopaused`: titik tidak
+   disimpan, server tetap `recording`. Kembali merekam bila kecepatan >= ambang. Tidak memanggil endpoint `pause`.
+4. **Jeda manual:** tombol Jeda memanggil `pause`/`resume`; saat `paused` titik tidak disimpan.
+5. **Simpan lokal dulu:** titik diterima langsung ke store `buffer`. Batch dibentuk bila `buffer` mencapai
+   `record_batch_size` titik **atau** `record_batch_interval_s` detik berlalu (dan buffer tidak kosong).
+6. **Kirim:** satu batch berjalan sekaligus, berurutan menurut `created_at`. Hapus dari `pending_batches` hanya
+   setelah 2xx. Galat jaringan atau 5xx: coba lagi dengan UUID yang sama (jeda 2, 4, 8, hingga 30 detik).
+   409 `limit_reached`: hapus batch, hentikan perekaman, tampilkan pesan. 409 `not_active`: buang batch, tampilkan pesan.
+   422: buang batch, tampilkan galat (bug klien, jangan diulang). 401/419: batch tetap disimpan, minta muat ulang halaman.
+7. **Batas:** berhenti menerima titik bila `point_count + antrean >= track_max_points`, atau antrean lokal
+   >= `offline_queue_max_points`, dengan pesan jelas.
+8. **Pemulihan saat dimuat:** `GET outdoor.tracks.active`. Jika ada, tampilkan banner
+   "Ada rekaman aktif" dengan **Lanjutkan** (jika `paused` panggil `resume`, lalu mulai `watchPosition` dan kirim ulang
+   `pending_batches` track itu) dan **Selesaikan** (kirim semua batch menunggu, lalu `finish`).
+   Batch yatim untuk track yang sudah selesai akan dijawab 409 `not_active` dan dibuang.
+9. **Selesai:** kuras semua batch dulu; `finish` hanya dipanggil bila kuras sukses; bila gagal, tampilkan galat
+   dan biarkan rekaman tetap aktif.
+10. **Wake Lock:** diminta bila `config.record_use_wake_lock` dan `navigator.wakeLock` tersedia; diminta ulang saat
+    tab kembali terlihat (dilepas otomatis saat tersembunyi).
+11. **Tab tersembunyi:** tampilkan peringatan (batasan bagian 8), jangan berhenti merekam diam-diam.
+12. `watchPosition` dihentikan dan wake lock dilepas di `onBeforeUnmount` serta saat selesai.
+
+### 17.6 Perluasan kontrak `OutdoorMap.vue` (menambah 16.5, tidak mengubah prop lama)
+```js
+// prop baru
+liveTrace:    { type: Array,  default: () => [] },   // Array<[lng, lat]>
+livePosition: { type: Object, default: null },       // { lat, lng } | null
+```
+Layer baru `outdoor-live-track` (garis putus-putus `TRACK_COLOR`, lebar 4) dan `outdoor-live-position`
+(lingkaran), terpisah dari layer track tersimpan; ditambahkan lewat `waitForStyleReady()`.
+Peta tidak melakukan `fitBounds` otomatis saat `liveTrace` berubah.
+
+### 17.7 Penempatan UI
+`TrackRecorder` menjadi section baru di sidebar `Outdoor/Index.vue`, di atas "Impor GPX". Setelah `finished`,
+halaman memanggil `router.reload({ only: ['tracks'] })` dan mengosongkan `liveTrace`.
+
+### 17.8 Pengujian
+- `recorderFilter.js` murni: belum ada vitest di proyek, tidak dipasang tanpa persetujuan. Logika filter diuji lewat
+  e2e Playwright (`context.setGeolocation` bertahap + `grantPermissions(['geolocation'])`), dengan nilai yang
+  jarak/selangnya bisa dihitung tangan.
+- E2E rekam: mulai, 3 sampai 5 posisi tiruan melewati filter, selesai, track muncul di daftar dengan `point_count` benar.
+  Tambahan: jaringan diputus (`context.setOffline`) lalu dipulihkan, jumlah titik di server tidak ganda.
+- Kriteria selesai Fase 2 tetap: rekam 10+ menit di HP nyata tanpa titik ganda (butuh HTTPS yang dipercaya HP).
+
+---
 
 ## Referensi
 
