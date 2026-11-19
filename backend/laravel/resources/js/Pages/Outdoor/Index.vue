@@ -85,6 +85,14 @@
             </li>
           </ul>
         </section>
+
+        <!-- Perencana rute (docs/outdoor.md, 17.9) -->
+        <section class="bg-white rounded-xl border border-slate-200 p-4">
+          <RoutePlanner :routes="routes" :projects="projects" :max-vertices="routeMaxVertices"
+                        v-model:vertices="routeVertices" v-model:drawing="routeDrawing"
+                        @visible-change="ids => visibleRouteIds = ids"
+                        @saved="onRouteSaved" />
+        </section>
       </aside>
 
       <!-- ── Peta ───────────────────────────────────────────────── -->
@@ -95,8 +103,12 @@
           :selected-track-id="selectedTrackId"
           :live-trace="liveTrace"
           :live-position="livePosition"
+          :routes="mapRoutes"
+          :route-draft="routeVertices"
+          :draw-route="routeDrawing"
           height="640px"
           @select-track="selectTrack"
+          @add-route-vertex="onAddRouteVertex"
           @select-waypoint="id => selectedWaypointId = id"
         />
       </section>
@@ -114,12 +126,15 @@ import WaypointForm from '@/Components/Outdoor/WaypointForm.vue'
 
 const OutdoorMap = defineAsyncComponent(() => import('@/Components/Outdoor/OutdoorMap.vue'))
 const TrackRecorder = defineAsyncComponent(() => import('@/Components/Outdoor/TrackRecorder.vue'))
+const RoutePlanner = defineAsyncComponent(() => import('@/Components/Outdoor/RoutePlanner.vue'))
 
 const props = defineProps({
   tracks:    { type: Array, default: () => [] },
   waypoints: { type: Array, default: () => [] },
   projects:  { type: Array, default: () => [] },
   recordingConfig: { type: Object, required: true },
+  routes:          { type: Array,  default: () => [] },
+  routeMaxVertices: { type: Number, required: true },
 })
 
 const geometries         = ref({})
@@ -251,6 +266,23 @@ function onRecorderState(s) {
   }
 }
 function onRecorderFinished() { router.reload({ only: ['tracks'] }) }
+
+// Routes: server geometry is [lat, lng]; map props are [lng, lat] (docs 17.9). Converted only here.
+const routeVertices   = ref([])
+const routeDrawing    = ref(false)
+const visibleRouteIds = ref([])
+
+const mapRoutes = computed(() =>
+  props.routes
+    .filter(r => visibleRouteIds.value.includes(r.id))
+    .map(r => ({ id: r.id, name: r.name, coordinates: r.geometry.map(([lat, lng]) => [lng, lat]) }))
+)
+
+function onAddRouteVertex({ lat, lng }) {
+  if (routeVertices.value.length >= props.routeMaxVertices) return
+  routeVertices.value = [...routeVertices.value, [lng, lat]]
+}
+function onRouteSaved() { router.reload({ only: ['routes'] }) }
 
 function formatDistance(meters) {
   if (meters === null || meters === undefined) return '—'
