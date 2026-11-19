@@ -678,6 +678,68 @@ halaman memanggil `router.reload({ only: ['tracks'] })` dan mengosongkan `liveTr
   Tambahan: jaringan diputus (`context.setOffline`) lalu dipulihkan, jumlah titik di server tidak ganda.
 - Kriteria selesai Fase 2 tetap: rekam 10+ menit di HP nyata tanpa titik ganda (butuh HTTPS yang dipercaya HP).
 
+### 17.9 Perencana Rute (2.8b, ditulis sebelum implementasi)
+
+**Server (sudah terbangun, 2.6):** `outdoor.routes.{index,store,update,destroy}`, semuanya JSON.
+- Bentuk rute: `{id, user_id, project_id, name, geometry, distance_m, notes, created_at, updated_at}`;
+  `geometry` = `[[lat, lng], ...]` (float, urutan **lat dulu**, sesuai bagian 5); `distance_m` = string 3 desimal.
+- `store` membalas 201 `{data: Route}`; `update` 200 `{data: Route}`; `destroy` 200 `{message}`; validasi 422 `{errors}`.
+- Body store **dan** update: `{name (wajib, maks 150), geometry (wajib, 2 sampai route_max_vertices titik), notes?, project_id?}`.
+  `distance_m` dari klien diabaikan; server selalu menghitung haversine.
+
+**Props halaman (menambah 17.2):** `OutdoorController::index` menambah `routes` (daftar rute milik user, terbaru dulu,
+lewat `RouteService::listFor`) dan `routeMaxVertices` (Number, dari `config('geolevel.outdoor.route_max_vertices')`).
+Prop `recordingConfig` tidak diubah. Muat ulang daftar: `router.reload({ only: ['routes'] })`.
+
+**Konversi koordinat:** DB dan API memakai `[lat, lng]`; MapLibre dan seluruh prop peta memakai `[lng, lat]`.
+Konversi hanya di `Index.vue` (ke peta) dan `RoutePlanner.vue` (ke API saat simpan, dan saat memuat rute untuk diubah).
+
+**Perluasan kontrak `OutdoorMap.vue` (menambah 16.5 dan 17.6, prop lama tidak berubah):**
+```js
+routes:     { type: Array,   default: () => [] },   // [{ id, name, coordinates: [[lng, lat], ...] }] rute tersimpan yang ditampilkan
+routeDraft: { type: Array,   default: () => [] },   // Array<[lng, lat]> vertex yang sedang digambar
+drawRoute:  { type: Boolean, default: false },      // mode gambar
+// emit baru: 'add-route-vertex' -> { lat, lng }
+```
+- Layer baru: `outdoor-routes-line` (oranye `#F97316`, lebar 3, solid), `outdoor-route-draft-line` (oranye, lebar 4,
+  putus-putus), `outdoor-route-draft-vertices` (lingkaran kecil oranye berpinggir putih). Semua lewat `renderAll()`
+  dan `waitForStyleReady()`; parent mengirim array **baru** tiap perubahan (watch dangkal).
+- Saat `drawRoute` true: klik peta hanya meng-emit `add-route-vertex`, tidak memilih track/waypoint; kursor `crosshair`.
+- Tidak ada `fitBounds` otomatis untuk `routes` maupun `routeDraft`. Warna rute masuk ke legenda peta.
+
+**`RoutePlanner.vue`** (lazy-loaded via `defineAsyncComponent`; section "Rute" di sidebar `Index.vue`, di bawah "Waypoint"):
+```js
+defineProps({
+  routes:   { type: Array,   default: () => [] },     // bentuk server (geometry [lat, lng])
+  projects: { type: Array,   default: () => [] },     // [{ id, name }]
+  maxVertices: { type: Number, required: true },      // = routeMaxVertices
+  vertices: { type: Array,   default: () => [] },     // draft Array<[lng, lat]> (dimiliki parent)
+  drawing:  { type: Boolean, default: false },
+})
+defineEmits([
+  'update:vertices',   // Array<[lng, lat]> baru: Urungkan, Kosongkan, atau memuat rute untuk diubah
+  'update:drawing',    // Boolean
+  'visible-change',    // Array<number> id rute yang dicentang tampil
+  'saved',             // Route dari server setelah store/update sukses
+])
+```
+Perilaku:
+1. Tombol **Rancang Rute** mengaktifkan mode gambar. Parent menambah vertex pada event `add-route-vertex` selama
+   `vertices.length < maxVertices`; bila penuh, planner menampilkan pesan (tanpa angka hardcode).
+2. Tombol: **Urungkan** (buang vertex terakhir), **Kosongkan**, **Simpan** (aktif bila nama terisi dan >= 2 vertex),
+   **Batal** (kosongkan draft, keluar mode gambar, lepas mode ubah).
+3. Perkiraan jarak saat menggambar memakai `haversineM` dari `recorderFilter.js` (hanya perkiraan klien); daftar
+   rute menampilkan `distance_m` dari server.
+4. Simpan: tanpa `editingId` memakai `POST outdoor.routes.store`, dengan `editingId` memakai `PUT outdoor.routes.update`
+   (body lengkap). Body: `{name, geometry: vertices -> [lat, lng], notes, project_id}`. Galat 422 tampil per kolom.
+5. Per rute di daftar: kotak centang tampil/sembunyi (awalnya semua tersembunyi), **Ubah** (memuat geometri ke draft,
+   mode ubah, mode gambar aktif), **Hapus** (`confirm()` lalu `DELETE`, lalu `saved`-style reload).
+6. Setelah simpan atau hapus sukses: parent `router.reload({ only: ['routes'] })` dan draft dikosongkan.
+
+**Pengujian 2.8b:** PHPUnit untuk prop `routes` dan `routeMaxVertices` pada `outdoor.index`; e2e Playwright: masuk mode
+gambar, klik tiga titik pada kanvas, isi nama, simpan, rute tampil di daftar dengan jarak > 0 dari server, hapus.
+Garis di WebGL tidak dinilai e2e (sama seperti catatan 16.7).
+
 ---
 
 ## Referensi
