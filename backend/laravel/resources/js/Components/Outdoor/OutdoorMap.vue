@@ -11,11 +11,15 @@
         class="px-2.5 py-1.5 border-l border-slate-200">Satelit</button>
     </div>
 
-    <div v-if="tracks.length || legendItems.length"
+    <div v-if="tracks.length || routes.length || legendItems.length"
          class="absolute bottom-6 left-3 z-10 bg-white/95 border border-slate-200 rounded-lg shadow-sm px-2.5 py-2 text-[11px] text-slate-600 space-y-1">
       <div v-if="tracks.length" class="flex items-center gap-2">
         <span class="inline-block w-5 rounded" :style="{ background: TRACK_COLOR, height: '3px' }"></span>
         Track
+      </div>
+      <div v-if="routes.length" class="flex items-center gap-2">
+        <span class="inline-block w-5 rounded" :style="{ background: ROUTE_COLOR, height: '3px' }"></span>
+        Rute
       </div>
       <div v-for="item in legendItems" :key="item.category" class="flex items-center gap-2">
         <span class="inline-block w-2.5 h-2.5 rounded-full border border-white shadow"
@@ -24,7 +28,7 @@
       </div>
     </div>
 
-    <div v-if="tracks.length === 0 && waypoints.length === 0 && liveTrace.length === 0 && !livePosition"
+    <div v-if="tracks.length === 0 && waypoints.length === 0 && liveTrace.length === 0 && !livePosition && routes.length === 0 && routeDraft.length === 0"
          class="absolute inset-0 flex items-center justify-center bg-white/70 rounded-lg pointer-events-none">
       <p class="text-xs text-slate-400 font-mono">Belum ada track atau waypoint</p>
     </div>
@@ -35,7 +39,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import maplibregl from 'maplibre-gl'
 import { MAP_STYLES, INDONESIA_CENTER } from '@/Components/Map/mapStyle'
-import { TRACK_COLOR, categoryColor, categoryLabel } from './outdoorCategories'
+import { TRACK_COLOR, ROUTE_COLOR, categoryColor, categoryLabel } from './outdoorCategories'
 
 // Contract (docs/outdoor.md, bagian 7):
 //   props : tracks    Array<{ id, name, coordinates: [[lng, lat], ...] }>
@@ -52,9 +56,12 @@ const props = defineProps({
   height:          { type: String,  default: '500px' },
   liveTrace:       { type: Array,   default: () => [] },
   livePosition:    { type: Object,  default: null },
+  routes:          { type: Array,   default: () => [] },
+  routeDraft:      { type: Array,   default: () => [] },
+  drawRoute:       { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select-track', 'select-waypoint'])
+const emit = defineEmits(['select-track', 'select-waypoint', 'add-route-vertex'])
 
 const SOURCE_TRACKS   = 'outdoor-tracks'
 const LAYER_TRACKS    = 'outdoor-tracks-line'
@@ -65,6 +72,12 @@ const SOURCE_LIVE_TRACK = 'outdoor-live-track'
 const LAYER_LIVE_TRACK  = 'outdoor-live-track-line'
 const SOURCE_LIVE_POS   = 'outdoor-live-position'
 const LAYER_LIVE_POS    = 'outdoor-live-position-circle'
+const SOURCE_ROUTES      = 'outdoor-routes'
+const LAYER_ROUTES       = 'outdoor-routes-line'
+const SOURCE_ROUTE_DRAFT = 'outdoor-route-draft'
+const LAYER_ROUTE_DRAFT  = 'outdoor-route-draft-line'
+const SOURCE_ROUTE_VERTS = 'outdoor-route-draft-vertices'
+const LAYER_ROUTE_VERTS  = 'outdoor-route-draft-vertices-circle'
 
 const mapContainer = ref(null)
 const mapStyleMode = ref('street')
@@ -153,6 +166,7 @@ function renderAll() {
   }
 
   renderLive()
+  renderRoutes()
 }
 
 // Live recording overlay (docs 17.6): separate sources/layers from saved tracks.
@@ -204,6 +218,68 @@ function renderLive() {
   }
 }
 
+function renderRoutes() {
+  const lines = {
+    type: 'FeatureCollection',
+    features: props.routes
+      .filter(r => Array.isArray(r.coordinates) && r.coordinates.length >= 2)
+      .map(r => ({
+        type: 'Feature',
+        properties: { id: r.id, name: r.name },
+        geometry: { type: 'LineString', coordinates: r.coordinates },
+      })),
+  }
+  const draftLine = {
+    type: 'FeatureCollection',
+    features: props.routeDraft.length >= 2
+      ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: props.routeDraft } }]
+      : [],
+  }
+  const draftPoints = {
+    type: 'FeatureCollection',
+    features: props.routeDraft.map(c => ({
+      type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: c },
+    })),
+  }
+
+  if (map.getSource(SOURCE_ROUTES)) {
+    map.getSource(SOURCE_ROUTES).setData(lines)
+  } else {
+    map.addSource(SOURCE_ROUTES, { type: 'geojson', data: lines })
+    map.addLayer({
+      id: LAYER_ROUTES, type: 'line', source: SOURCE_ROUTES,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ROUTE_COLOR, 'line-width': 3 },
+    })
+  }
+
+  if (map.getSource(SOURCE_ROUTE_DRAFT)) {
+    map.getSource(SOURCE_ROUTE_DRAFT).setData(draftLine)
+  } else {
+    map.addSource(SOURCE_ROUTE_DRAFT, { type: 'geojson', data: draftLine })
+    map.addLayer({
+      id: LAYER_ROUTE_DRAFT, type: 'line', source: SOURCE_ROUTE_DRAFT,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ROUTE_COLOR, 'line-width': 4, 'line-dasharray': [2, 1.5] },
+    })
+  }
+
+  if (map.getSource(SOURCE_ROUTE_VERTS)) {
+    map.getSource(SOURCE_ROUTE_VERTS).setData(draftPoints)
+  } else {
+    map.addSource(SOURCE_ROUTE_VERTS, { type: 'geojson', data: draftPoints })
+    map.addLayer({
+      id: LAYER_ROUTE_VERTS, type: 'circle', source: SOURCE_ROUTE_VERTS,
+      paint: {
+        'circle-radius': 5,
+        'circle-color': ROUTE_COLOR,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#FFFFFF',
+      },
+    })
+  }
+}
+
 function refresh() {
   waitForStyleReady(renderAll)
 }
@@ -232,6 +308,10 @@ function fitToSelectedTrack() {
 }
 
 function onMapClick(e) {
+  if (props.drawRoute) {
+    emit('add-route-vertex', { lat: e.lngLat.lat, lng: e.lngLat.lng })
+    return
+  }
   const layers = [LAYER_WAYPOINTS, LAYER_TRACKS_HIT].filter(id => map.getLayer(id))
   if (layers.length === 0) return
   const features = map.queryRenderedFeatures(e.point, { layers })
@@ -246,6 +326,10 @@ function onMapClick(e) {
 }
 
 function onMapMove(e) {
+  if (props.drawRoute) {
+    map.getCanvas().style.cursor = 'crosshair'
+    return
+  }
   const layers = [LAYER_WAYPOINTS, LAYER_TRACKS_HIT].filter(id => map.getLayer(id))
   const hit = layers.length > 0 && map.queryRenderedFeatures(e.point, { layers }).length > 0
   map.getCanvas().style.cursor = hit ? 'pointer' : ''
@@ -286,6 +370,9 @@ const dataSignature = computed(() =>
 watch(() => props.tracks, refresh)
 watch(() => props.waypoints, refresh, { deep: true })
 watch(() => props.liveTrace, refresh)
+watch(() => props.routes, refresh)
+watch(() => props.routeDraft, refresh)
+watch(() => props.drawRoute, (on) => { if (map && !on) map.getCanvas().style.cursor = '' })
 watch(() => props.livePosition, refresh, { deep: true })
 watch(() => props.selectedTrackId, () => {
   refresh()

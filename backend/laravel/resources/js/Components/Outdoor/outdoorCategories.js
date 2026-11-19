@@ -4,6 +4,7 @@
 // (BM #F59E0B, TP #3B82F6, IS #10B981, CP #8B5CF6) and the survey polyline (#DC2626).
 
 export const TRACK_COLOR = '#0EA5E9'
+export const ROUTE_COLOR = '#F97316'
 
 export const CATEGORY_META = {
   generic:       { label: 'Umum',       color: '#64748B' },
