@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\RouteService;
 use App\Services\TrackService;
 use App\Services\WaypointService;
 use Illuminate\Http\Request;
@@ -31,6 +32,7 @@ class OutdoorController extends Controller
     public function __construct(
         private readonly TrackService $tracks,
         private readonly WaypointService $waypoints,
+        private readonly RouteService $routes,
     ) {
     }
 
@@ -47,6 +49,8 @@ class OutdoorController extends Controller
             'waypoints' => $this->waypoints->listFor($user),
             'projects'  => $user->projects()->orderBy('name')->get(['id', 'name']),
             'recordingConfig' => Arr::only(config('geolevel.outdoor'), self::RECORDING_CONFIG_KEYS),
+            'routes'    => $this->routes->listFor($user),
+            'routeMaxVertices' => (int) config('geolevel.outdoor.route_max_vertices'),
         ]);
     }
 }
