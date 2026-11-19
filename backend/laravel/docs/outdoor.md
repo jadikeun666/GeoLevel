@@ -742,6 +742,39 @@ Garis di WebGL tidak dinilai e2e (sama seperti catatan 16.7).
 
 ---
 
+## 18. Status Implementasi Fase 2 (hasil; bila bertentangan dengan 5, 8, 17, bagian ini berlaku)
+
+### 18.1 Dibangun
+- Backend: `track_point_batches`, `routes`; `TrackRecordingService`, `TrackRecordingController`, `FinalizeTrackJob`,
+  event `TrackFinished` (+ listener `DispatchFinalizeTrackJob`, `LogTrackFinished`), `RouteService`, `OutdoorRouteController`.
+  Prop halaman `recordingConfig`, `routes`, `routeMaxVertices`.
+- Frontend: `recorderFilter.js`, `recorderQueue.js`, `TrackRecorder.vue`, `RoutePlanner.vue`; `OutdoorMap.vue` + prop
+  `liveTrace`, `livePosition`, `routes`, `routeDraft`, `drawRoute`, event `add-route-vertex`; `ROUTE_COLOR` `#F97316`.
+- Tambahan di luar 17.3: `speedBetween`, `toFix`, `toPayloadPoint` di `recorderFilter.js`.
+- Pengujian: PHPUnit 379; `npm run test:js` (`node --test tests/js/*.test.mjs`, 10 tes, tanpa dependensi);
+  e2e `outdoor.spec.ts` (3), `outdoor-recording.spec.ts` (2, termasuk balasan batch hilang lalu retry), `outdoor-routes.spec.ts` (1).
+
+### 18.2 Penyimpangan dan keputusan desain
+- Idempotensi batch: UNIQUE(track_id, client_batch_id); `seq` dari server (MAX(seq)+1, kunci baris track); retry batch lama dijawab 200 `duplicate`.
+- Satu rekaman aktif per user; start kedua 409 `active_exists`. Tidak ada auto-finish.
+- Batch yang melewati `track_max_points` diterima sebagian dengan `limit_reached=true`; batch berikutnya 409 `limit_reached`.
+- `FinalizeTrackJob` memakai `TrackStatsService::fromPoints`, bukan window function SQL (test berjalan di SQLite). Menyimpang dari bagian 5.
+- Auto-pause hanya di klien; server tetap `recording`.
+- `OutdoorRoute` (hindari bentrok facade Route); parameter `{outdoorRoute}`; `distance_m` selalu dihitung server; update memakai body lengkap.
+- Event discovery dimatikan; listener didaftar manual di `EventServiceProvider::$listen`.
+- Log aktivitas hanya bila track punya proyek.
+- Peringatan tab tersembunyi baru tampil saat tab kembali terlihat.
+
+### 18.3 Utang teknis dan belum terverifikasi
+- **Syarat penutup Fase 2 belum terpenuhi:** rekam 10+ menit di HP nyata tanpa titik ganda (butuh HTTPS yang dipercaya HP). Perilaku GPS nyata (jitter saat diam, auto-pause, `coords.speed` null) belum teruji; e2e memakai geolokasi tiruan.
+- Batch yatim milik track yang sudah selesai tetap di IndexedDB bila tidak pernah dikirim ulang.
+- `recorderQueue.js` hanya teruji lewat e2e (Node tanpa IndexedDB).
+- Mode Ubah rute belum punya e2e; garis WebGL tidak dinilai e2e.
+- Impor GPX nyata di /outdoor, tile CARTO tanpa watermark, dan pengujian di PostgreSQL (bukan SQLite) belum diverifikasi manusia.
+- Nginx `client_max_body_size` 20M: sudah dicek, memenuhi syarat.
+
+---
+
 ## Referensi
 
 - `docs/map.md` — stack peta, `mapStyle.js`, pola `waitForStyleReady()`
