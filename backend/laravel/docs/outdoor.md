@@ -766,7 +766,7 @@ Garis di WebGL tidak dinilai e2e (sama seperti catatan 16.7).
 - Peringatan tab tersembunyi baru tampil saat tab kembali terlihat.
 
 ### 18.3 Utang teknis dan belum terverifikasi
-- **Syarat penutup Fase 2 belum terpenuhi:** rekam 10+ menit di HP nyata tanpa titik ganda (butuh HTTPS yang dipercaya HP). Perilaku GPS nyata (jitter saat diam, auto-pause, `coords.speed` null) belum teruji; e2e memakai geolokasi tiruan.
+- **Fase 2 selesai.** Uji rekam di HP nyata lewat tunnel Cloudflare (2026-11-22) dilaporkan berhasil oleh pengembang. Output query titik ganda dan catatan auto-pause/jitter tidak dilampirkan; hasil rinci belum tercatat di sini.
 - Batch yatim milik track yang sudah selesai tetap di IndexedDB bila tidak pernah dikirim ulang.
 - `recorderQueue.js` hanya teruji lewat e2e (Node tanpa IndexedDB).
 - Mode Ubah rute belum punya e2e; garis WebGL tidak dinilai e2e.

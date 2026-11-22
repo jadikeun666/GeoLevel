@@ -913,5 +913,5 @@ Ringkasan; sumber kebenaran `docs/outdoor.md` bagian 17 dan 18.
 - Rekam: `TrackRecorder.vue` + `recorderFilter.js` + `recorderQueue.js` (IndexedDB), batch idempoten `client_batch_id`.
 - Rute: `RoutePlanner.vue`, `outdoor.routes.*`; geometri DB `[lat, lng]`, peta `[lng, lat]`.
 - Tes: `npm run test:js` (node:test), `php artisan test` (379), e2e `outdoor*.spec.ts`. Jalankan `OutdoorDemoSeeder` dulu.
-- Belum selesai: uji rekam 10+ menit di HP nyata (syarat penutup Fase 2).
+- Fase 2 selesai; uji HP nyata lewat tunnel dilaporkan berhasil (2026-11-22).
 - Jangan pakai `| tail` di rantai `&&` yang memuat test (status keluar pipe menutupi kegagalan).
