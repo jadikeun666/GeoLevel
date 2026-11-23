@@ -93,6 +93,11 @@
                         @visible-change="ids => visibleRouteIds = ids"
                         @saved="onRouteSaved" />
         </section>
+
+        <!-- Konverter koordinat (docs/outdoor.md, 19.1) -->
+        <section class="bg-white rounded-xl border border-slate-200 p-4">
+          <CoordinateConverter :default-format="defaultCoordinateFormat" />
+        </section>
       </aside>
 
       <!-- ── Peta ───────────────────────────────────────────────── -->
@@ -127,6 +132,7 @@ import WaypointForm from '@/Components/Outdoor/WaypointForm.vue'
 const OutdoorMap = defineAsyncComponent(() => import('@/Components/Outdoor/OutdoorMap.vue'))
 const TrackRecorder = defineAsyncComponent(() => import('@/Components/Outdoor/TrackRecorder.vue'))
 const RoutePlanner = defineAsyncComponent(() => import('@/Components/Outdoor/RoutePlanner.vue'))
+const CoordinateConverter = defineAsyncComponent(() => import('@/Components/Outdoor/CoordinateConverter.vue'))
 
 const props = defineProps({
   tracks:    { type: Array, default: () => [] },
@@ -135,6 +141,7 @@ const props = defineProps({
   recordingConfig: { type: Object, required: true },
   routes:          { type: Array,  default: () => [] },
   routeMaxVertices: { type: Number, required: true },
+  defaultCoordinateFormat: { type: String, default: 'dd' },
 })
 
 const geometries         = ref({})

@@ -33,6 +33,7 @@ class OutdoorRecordingConfigTest extends TestCase
                     ->where('track_max_points', $c('track_max_points'))
                     ->where('offline_queue_max_points', $c('offline_queue_max_points'))
                 )
+                ->where('defaultCoordinateFormat', config('geolevel.outdoor.default_coordinate_format'))
                 ->etc()
             );
     }

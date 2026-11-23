@@ -51,6 +51,7 @@ class OutdoorController extends Controller
             'recordingConfig' => Arr::only(config('geolevel.outdoor'), self::RECORDING_CONFIG_KEYS),
             'routes'    => $this->routes->listFor($user),
             'routeMaxVertices' => (int) config('geolevel.outdoor.route_max_vertices'),
+            'defaultCoordinateFormat' => config('geolevel.outdoor.default_coordinate_format'),
         ]);
     }
 }
