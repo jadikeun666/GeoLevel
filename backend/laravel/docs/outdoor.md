@@ -775,6 +775,31 @@ Garis di WebGL tidak dinilai e2e (sama seperti catatan 16.7).
 
 ---
 
+## 19. Fase 3: Koordinat, Ukur, Navigasi (kontrak; bila bertentangan dengan 10, bagian ini berlaku)
+
+### 19.1 Konverter koordinat (3.1 dan 3.2)
+**Backend (3.1, selesai):** `GeoMathService::toUtm`, `fromUtm`, `toMgrs`, `toDms` (deret Krüger n^4, selisih < 1 mm terhadap PROJ;
+nilai acuan test dari pyproj dan GeoTrans). Zona hanya 46 sampai 54. Konstanta WGS84 dan faktor skala ada di `config('geolevel.outdoor')`.
+
+**Endpoint (3.2a):** `POST outdoor/convert` (nama `outdoor.convert`), JSON, tanpa simpan ke DB. Satu dari dua bentuk input:
+- `{lat, lng}`, atau
+- `{zone, hemisphere ('N'|'S'), easting, northing}` (dikonversi ke lat/lng lewat `fromUtm`).
+
+Balasan 200: `{data: {lat, lng, dms: {lat, lng}, utm: {zone, hemisphere, easting, northing}, mgrs}}`.
+`lat`/`lng` string 8 desimal; `easting`/`northing` string 3 desimal; `mgrs` string 1 m, atau `null` bila lintang di luar -80..84.
+Zona di luar 46 sampai 54: 422 `{errors}` dengan pesan Indonesia. `utm` selalu dihitung ulang dari lat/lng hasil konversi.
+MGRS ke koordinat tidak didukung (tidak diminta bagian 10).
+
+**`CoordinateConverter.vue` (3.2b, lazy-loaded; section "Konverter" di sidebar `Index.vue`):**
+```js
+defineProps({ defaultFormat: { type: String, default: 'dd' } })   // config default_coordinate_format
+defineEmits([])
+```
+Dua mode input (DD atau UTM), tombol Konversi, hasil keempat format (DD, DMS, UTM, MGRS) masing-masing dengan tombol Salin;
+galat 422 tampil per kolom. `OutdoorController::index` menambah prop `defaultCoordinateFormat`.
+
+---
+
 ## Referensi
 
 - `docs/map.md` — stack peta, `mapStyle.js`, pola `waitForStyleReady()`
