@@ -103,6 +103,11 @@
         <section class="bg-white rounded-xl border border-slate-200 p-4">
           <MeasureTool v-model:vertices="measureVertices" v-model:measuring="measuring" :max-vertices="routeMaxVertices" />
         </section>
+
+        <!-- Navigasi ke waypoint (docs/outdoor.md, 19.3) -->
+        <section class="bg-white rounded-xl border border-slate-200 p-4">
+          <NavigationHud :waypoints="waypoints" :min-speed-mps="movingSpeedMinMps" />
+        </section>
       </aside>
 
       <!-- ── Peta ───────────────────────────────────────────────── -->
@@ -138,6 +143,7 @@ const OutdoorMap = defineAsyncComponent(() => import('@/Components/Outdoor/Outdo
 const TrackRecorder = defineAsyncComponent(() => import('@/Components/Outdoor/TrackRecorder.vue'))
 const RoutePlanner = defineAsyncComponent(() => import('@/Components/Outdoor/RoutePlanner.vue'))
 const MeasureTool = defineAsyncComponent(() => import('@/Components/Outdoor/MeasureTool.vue'))
+const NavigationHud = defineAsyncComponent(() => import('@/Components/Outdoor/NavigationHud.vue'))
 const CoordinateConverter = defineAsyncComponent(() => import('@/Components/Outdoor/CoordinateConverter.vue'))
 
 const props = defineProps({
@@ -148,6 +154,7 @@ const props = defineProps({
   routes:          { type: Array,  default: () => [] },
   routeMaxVertices: { type: Number, required: true },
   defaultCoordinateFormat: { type: String, default: 'dd' },
+  movingSpeedMinMps: { type: Number, required: true },
 })
 
 const geometries         = ref({})

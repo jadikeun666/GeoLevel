@@ -34,6 +34,7 @@ class OutdoorRecordingConfigTest extends TestCase
                     ->where('offline_queue_max_points', $c('offline_queue_max_points'))
                 )
                 ->where('defaultCoordinateFormat', config('geolevel.outdoor.default_coordinate_format'))
+                ->where('movingSpeedMinMps', config('geolevel.outdoor.stats_moving_speed_min_mps'))
                 ->etc()
             );
     }

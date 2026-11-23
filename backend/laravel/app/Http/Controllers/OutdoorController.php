@@ -52,6 +52,7 @@ class OutdoorController extends Controller
             'routes'    => $this->routes->listFor($user),
             'routeMaxVertices' => (int) config('geolevel.outdoor.route_max_vertices'),
             'defaultCoordinateFormat' => config('geolevel.outdoor.default_coordinate_format'),
+            'movingSpeedMinMps' => (float) config('geolevel.outdoor.stats_moving_speed_min_mps'),
         ]);
     }
 }
