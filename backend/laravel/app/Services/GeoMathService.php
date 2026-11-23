@@ -111,4 +111,160 @@ class GeoMathService
 
         return array_keys(array_filter($keep));
     }
+
+    private const MGRS_BANDS   = 'CDEFGHJKLMNPQRSTUVWX';
+    private const MGRS_COLUMNS = ['ABCDEFGH', 'JKLMNPQR', 'STUVWXYZ'];
+    private const MGRS_ROWS    = 'ABCDEFGHJKLMNPQRSTUV';
+
+    /**
+     * WGS84 -> UTM (Krüger n-series, 4th order; sub-millimeter inside a zone).
+     * Zones limited to config utm_zone_min..max (Indonesia).
+     *
+     * @return array{zone: int, hemisphere: string, easting: string, northing: string}
+     */
+    public function toUtm(float|string $lat, float|string $lng): array
+    {
+        $lat  = (float) $lat;
+        $lng  = (float) $lng;
+        $zone = (int) floor(($lng + 180) / 6) + 1;
+        $this->assertZone($zone);
+
+        $k   = $this->kruger();
+        $phi = deg2rad($lat);
+        $lam = deg2rad($lng - ($zone * 6 - 183));
+        $q   = 2 * sqrt($k['n']) / (1 + $k['n']);
+        $t   = sinh(atanh(sin($phi)) - $q * atanh($q * sin($phi)));
+        $xi  = atan2($t, cos($lam));
+        $eta = atanh(sin($lam) / sqrt(1 + $t * $t));
+
+        $sumE = 0.0;
+        $sumN = 0.0;
+        foreach ($k['alpha'] as $i => $alpha) {
+            $j     = 2 * ($i + 1);
+            $sumE += $alpha * cos($j * $xi) * sinh($j * $eta);
+            $sumN += $alpha * sin($j * $xi) * cosh($j * $eta);
+        }
+
+        $scale = (float) config('geolevel.outdoor.utm_scale_factor') * $k['A'];
+        $north = $lat >= 0;
+
+        return [
+            'zone'       => $zone,
+            'hemisphere' => $north ? 'N' : 'S',
+            'easting'    => number_format((float) config('geolevel.outdoor.utm_central_meridian_easting') + $scale * ($eta + $sumE), 3, '.', ''),
+            'northing'   => number_format(($north ? 0.0 : (float) config('geolevel.outdoor.utm_false_northing_south')) + $scale * ($xi + $sumN), 3, '.', ''),
+        ];
+    }
+
+    /**
+     * UTM -> WGS84 (inverse of toUtm).
+     *
+     * @return array{lat: string, lng: string}  8 decimals, NUMERIC-ready
+     */
+    public function fromUtm(int $zone, string $hemisphere, float|string $easting, float|string $northing): array
+    {
+        $this->assertZone($zone);
+        if (! in_array($hemisphere, ['N', 'S'], true)) {
+            throw new \InvalidArgumentException('Hemisphere must be N or S.');
+        }
+
+        $k     = $this->kruger();
+        $scale = (float) config('geolevel.outdoor.utm_scale_factor') * $k['A'];
+        $xi    = ((float) $northing - ($hemisphere === 'S' ? (float) config('geolevel.outdoor.utm_false_northing_south') : 0.0)) / $scale;
+        $eta   = ((float) $easting - (float) config('geolevel.outdoor.utm_central_meridian_easting')) / $scale;
+
+        $xiP  = $xi;
+        $etaP = $eta;
+        foreach ($k['beta'] as $i => $beta) {
+            $j     = 2 * ($i + 1);
+            $xiP  -= $beta * sin($j * $xi) * cosh($j * $eta);
+            $etaP -= $beta * cos($j * $xi) * sinh($j * $eta);
+        }
+
+        $chi = asin(sin($xiP) / cosh($etaP));
+        $phi = $chi;
+        foreach ($k['delta'] as $i => $delta) {
+            $phi += $delta * sin(2 * ($i + 1) * $chi);
+        }
+        $lam = atan2(sinh($etaP), cos($xiP));
+
+        return [
+            'lat' => number_format(rad2deg($phi), 8, '.', ''),
+            'lng' => number_format($zone * 6 - 183 + rad2deg($lam), 8, '.', ''),
+        ];
+    }
+
+    /**
+     * WGS84 -> MGRS, 1 m precision, e.g. 48MYU0420713358.
+     * shortcut: truncates the already mm-rounded UTM value, so a point within 0.5 mm of a 1 m boundary can land one cell over; upgrade if sub-meter MGRS is ever needed.
+     */
+    public function toMgrs(float|string $lat, float|string $lng): string
+    {
+        $latF = (float) $lat;
+        if ($latF < -80 || $latF >= 84) {
+            throw new \InvalidArgumentException('MGRS latitude must be within -80..84.');
+        }
+
+        $utm  = $this->toUtm($lat, $lng);
+        $e    = (int) floor((float) $utm['easting']);
+        $n    = (int) floor((float) $utm['northing']);
+        $zone = $utm['zone'];
+
+        $band = self::MGRS_BANDS[(int) min(19, floor(($latF + 80) / 8))];
+        $col  = self::MGRS_COLUMNS[($zone - 1) % 3][intdiv($e, 100000) - 1];
+        $row  = self::MGRS_ROWS[(intdiv($n, 100000) + ($zone % 2 === 0 ? 5 : 0)) % 20];
+
+        return sprintf('%d%s%s%s%05d%05d', $zone, $band, $col, $row, $e % 100000, $n % 100000);
+    }
+
+    /** Degrees -> DMS string with 0.01" resolution, e.g. 6°12'31.68"S. */
+    public function toDms(float|string $degrees, bool $isLatitude): string
+    {
+        $v     = (float) $degrees;
+        $hemi  = $isLatitude ? ($v >= 0 ? 'N' : 'S') : ($v >= 0 ? 'E' : 'W');
+        $cs    = (int) round(abs($v) * 360000); // hundredths of an arc-second; split after rounding so 59.995" carries correctly
+
+        return sprintf('%d°%02d\'%05.2f"%s', intdiv($cs, 360000), intdiv($cs % 360000, 6000), ($cs % 6000) / 100, $hemi);
+    }
+
+    private function assertZone(int $zone): void
+    {
+        if ($zone < (int) config('geolevel.outdoor.utm_zone_min') || $zone > (int) config('geolevel.outdoor.utm_zone_max')) {
+            throw new \InvalidArgumentException("UTM zone {$zone} is outside the supported range.");
+        }
+    }
+
+    /** Krüger series coefficients for WGS84 (n^4 order). */
+    private function kruger(): array
+    {
+        $f  = 1 / (float) config('geolevel.outdoor.wgs84_inv_f');
+        $a  = (float) config('geolevel.outdoor.wgs84_a');
+        $n  = $f / (2 - $f);
+        $n2 = $n * $n;
+        $n3 = $n2 * $n;
+        $n4 = $n3 * $n;
+
+        return [
+            'n'     => $n,
+            'A'     => $a / (1 + $n) * (1 + $n2 / 4 + $n4 / 64 + $n3 * $n3 / 256),
+            'alpha' => [
+                $n / 2 - 2 * $n2 / 3 + 5 * $n3 / 16 + 41 * $n4 / 180,
+                13 * $n2 / 48 - 3 * $n3 / 5 + 557 * $n4 / 1440,
+                61 * $n3 / 240 - 103 * $n4 / 140,
+                49561 * $n4 / 161280,
+            ],
+            'beta'  => [
+                $n / 2 - 2 * $n2 / 3 + 37 * $n3 / 96 - $n4 / 360,
+                $n2 / 48 + $n3 / 15 - 437 * $n4 / 1440,
+                17 * $n3 / 480 - 37 * $n4 / 840,
+                4397 * $n4 / 161280,
+            ],
+            'delta' => [
+                2 * $n - 2 * $n2 / 3 - 2 * $n3 + 116 * $n4 / 45,
+                7 * $n2 / 3 - 8 * $n3 / 5 - 227 * $n4 / 45,
+                56 * $n3 / 15 - 136 * $n4 / 35,
+                4279 * $n4 / 630,
+            ],
+        ];
+    }
 }

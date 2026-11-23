@@ -93,6 +93,9 @@ return [
         'utm_zone_max'                 => 54,
         'utm_central_meridian_easting' => 500000,
         'utm_false_northing_south'     => 10000000,
+        'utm_scale_factor'             => 0.9996,
+        'wgs84_a'                      => 6378137.0,
+        'wgs84_inv_f'                  => 298.257223563,
         'coordinate_formats'           => ['dd', 'dms', 'utm', 'mgrs'],
         'default_coordinate_format'    => 'dd',
 
