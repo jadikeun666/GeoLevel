@@ -9,6 +9,7 @@ test('rute: gambar 3 titik, simpan, jarak dari server > 0, hapus', async ({ page
   await expect(canvas).toBeVisible({ timeout: 15000 })
 
   await page.getByTestId('route-draw').click()
+  await canvas.scrollIntoViewIfNeeded()
   const box = (await canvas.boundingBox())!
   for (const f of [0.4, 0.5, 0.6]) {
     await page.mouse.click(box.x + box.width * f, box.y + box.height * (0.3 + f / 2))

@@ -806,7 +806,19 @@ Balasan 200: `{data: {distance_m, perimeter_m, area_m2}}` (string 3 desimal; `pe
 Mode `area`: semua titik harus dalam satu zona UTM 46 sampai 54, bila tidak 422 pada `points`. Titik di dua sisi ekuator tetap dihitung.
 Luas adalah luas **grid UTM**, tidak dikoreksi faktor skala (selisih sekitar 0,08% di dekat meridian tengah); bukan untuk keperluan kadaster.
 
-**`MeasureTool.vue` (3.3b):** kontrak ditulis sebelum implementasi.
+**`MeasureTool.vue` (3.3b, lazy-loaded; section "Ukur" di sidebar `Index.vue`):**
+```js
+defineProps({
+  vertices:    { type: Array,   default: () => [] },   // Array<[lng, lat]> milik parent
+  measuring:   { type: Boolean, default: false },
+  maxVertices: { type: Number,  required: true },      // = routeMaxVertices
+})
+defineEmits(['update:vertices', 'update:measuring'])
+```
+Memakai ulang mode gambar peta (`draw-route`, `route-draft`, `add-route-vertex`; titik ukur tampil seperti draft rute).
+Parent hanya mengizinkan satu alat aktif (rute atau ukur) dan menambah titik ke alat yang aktif.
+Mode Jarak atau Luas; tombol Mulai Ukur, Urungkan, Kosongkan, Hitung (aktif bila titik >= 2 untuk Jarak, >= 3 untuk Luas), Selesai.
+Hasil dari `outdoor.measure`; galat 422 tampil apa adanya. Mengubah mode atau titik menghapus hasil lama.
 
 ---
 

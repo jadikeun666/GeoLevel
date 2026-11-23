@@ -98,6 +98,11 @@
         <section class="bg-white rounded-xl border border-slate-200 p-4">
           <CoordinateConverter :default-format="defaultCoordinateFormat" />
         </section>
+
+        <!-- Ukur jarak dan luas (docs/outdoor.md, 19.2) -->
+        <section class="bg-white rounded-xl border border-slate-200 p-4">
+          <MeasureTool v-model:vertices="measureVertices" v-model:measuring="measuring" :max-vertices="routeMaxVertices" />
+        </section>
       </aside>
 
       <!-- ── Peta ───────────────────────────────────────────────── -->
@@ -109,8 +114,8 @@
           :live-trace="liveTrace"
           :live-position="livePosition"
           :routes="mapRoutes"
-          :route-draft="routeVertices"
-          :draw-route="routeDrawing"
+          :route-draft="routeDrawing ? routeVertices : measureVertices"
+          :draw-route="routeDrawing || measuring"
           height="640px"
           @select-track="selectTrack"
           @add-route-vertex="onAddRouteVertex"
@@ -122,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -132,6 +137,7 @@ import WaypointForm from '@/Components/Outdoor/WaypointForm.vue'
 const OutdoorMap = defineAsyncComponent(() => import('@/Components/Outdoor/OutdoorMap.vue'))
 const TrackRecorder = defineAsyncComponent(() => import('@/Components/Outdoor/TrackRecorder.vue'))
 const RoutePlanner = defineAsyncComponent(() => import('@/Components/Outdoor/RoutePlanner.vue'))
+const MeasureTool = defineAsyncComponent(() => import('@/Components/Outdoor/MeasureTool.vue'))
 const CoordinateConverter = defineAsyncComponent(() => import('@/Components/Outdoor/CoordinateConverter.vue'))
 
 const props = defineProps({
@@ -285,9 +291,16 @@ const mapRoutes = computed(() =>
     .map(r => ({ id: r.id, name: r.name, coordinates: r.geometry.map(([lat, lng]) => [lng, lat]) }))
 )
 
+// Measure tool and route planner share the map's draw mode; only one is active at a time (docs 19.2).
+const measureVertices = ref([])
+const measuring       = ref(false)
+watch(routeDrawing, (on) => { if (on) measuring.value = false })
+watch(measuring,    (on) => { if (on) routeDrawing.value = false })
+
 function onAddRouteVertex({ lat, lng }) {
-  if (routeVertices.value.length >= props.routeMaxVertices) return
-  routeVertices.value = [...routeVertices.value, [lng, lat]]
+  const target = measuring.value ? measureVertices : routeVertices
+  if (target.value.length >= props.routeMaxVertices) return
+  target.value = [...target.value, [lng, lat]]
 }
 function onRouteSaved() { router.reload({ only: ['routes'] }) }
 
