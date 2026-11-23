@@ -227,6 +227,57 @@ class GeoMathService
         return sprintf('%d°%02d\'%05.2f"%s', intdiv($cs, 360000), intdiv($cs % 360000, 6000), ($cs % 6000) / 100, $hemi);
     }
 
+    /**
+     * Path length and (optionally) UTM-grid polygon area for [lat, lng] points.
+     * shortcut: area is grid area (no k0 scale correction, ~0.08% near the central meridian); add it if cadastral accuracy is ever needed.
+     *
+     * @param  list<array{0: float|string, 1: float|string}>  $points
+     * @return array{distance_m: string, perimeter_m: ?string, area_m2: ?string}
+     * @throws \InvalidArgumentException when area points span more than one zone or leave zones 46..54
+     */
+    public function measure(array $points, bool $area): array
+    {
+        $n    = count($points);
+        $path = 0.0;
+        for ($i = 1; $i < $n; $i++) {
+            $path += $this->haversine($points[$i - 1][0], $points[$i - 1][1], $points[$i][0], $points[$i][1]);
+        }
+
+        if (! $area) {
+            return ['distance_m' => number_format($path, 3, '.', ''), 'perimeter_m' => null, 'area_m2' => null];
+        }
+
+        $perimeter = $path + $this->haversine($points[$n - 1][0], $points[$n - 1][1], $points[0][0], $points[0][1]);
+        $falseN    = (float) config('geolevel.outdoor.utm_false_northing_south');
+        $zone      = null;
+        $xs        = [];
+        $ys        = [];
+        foreach ($points as $point) {
+            $utm    = $this->toUtm($point[0], $point[1]);
+            $zone ??= $utm['zone'];
+            if ($utm['zone'] !== $zone) {
+                throw new \InvalidArgumentException('Points span more than one UTM zone.');
+            }
+            $xs[] = (float) $utm['easting'];
+            $ys[] = (float) $utm['northing'] - ($utm['hemisphere'] === 'S' ? $falseN : 0.0);
+        }
+
+        // Shift to the first vertex so the cross products stay small (float precision).
+        $x0  = $xs[0];
+        $y0  = $ys[0];
+        $sum = 0.0;
+        for ($i = 0; $i < $n; $i++) {
+            $j    = ($i + 1) % $n;
+            $sum += ($xs[$i] - $x0) * ($ys[$j] - $y0) - ($xs[$j] - $x0) * ($ys[$i] - $y0);
+        }
+
+        return [
+            'distance_m'  => number_format($path, 3, '.', ''),
+            'perimeter_m' => number_format($perimeter, 3, '.', ''),
+            'area_m2'     => number_format(abs($sum) / 2, 3, '.', ''),
+        ];
+    }
+
     private function assertZone(int $zone): void
     {
         if ($zone < (int) config('geolevel.outdoor.utm_zone_min') || $zone > (int) config('geolevel.outdoor.utm_zone_max')) {

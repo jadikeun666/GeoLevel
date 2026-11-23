@@ -98,6 +98,7 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/outdoor/waypoints/{waypoint}', [WaypointController::class, 'destroy'])->name('outdoor.waypoints.destroy');
     Route::post  ('/outdoor/waypoints/import',     [WaypointController::class, 'import'])->name('outdoor.waypoints.import');
     Route::post  ('/outdoor/convert',              \App\Http\Controllers\CoordinateConvertController::class)->name('outdoor.convert');
+    Route::post  ('/outdoor/measure',              \App\Http\Controllers\MeasureController::class)->name('outdoor.measure');
 
     Route::get   ('/outdoor/tracks',         [TrackController::class, 'index'])->name('outdoor.tracks.index');
     Route::post  ('/outdoor/tracks/import',  [TrackController::class, 'import'])->name('outdoor.tracks.import');

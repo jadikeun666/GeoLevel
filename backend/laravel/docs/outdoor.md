@@ -798,6 +798,16 @@ defineEmits([])
 Dua mode input (DD atau UTM), tombol Konversi, hasil keempat format (DD, DMS, UTM, MGRS) masing-masing dengan tombol Salin;
 galat 422 tampil per kolom. `OutdoorController::index` menambah prop `defaultCoordinateFormat`.
 
+### 19.2 Ukur jarak dan luas (3.3)
+**Endpoint (3.3a):** `POST outdoor/measure` (nama `outdoor.measure`), JSON, tanpa simpan.
+Body: `{mode: 'line'|'area', points: [[lat, lng], ...]}`; `line` minimal 2 titik, `area` minimal 3, maksimal `route_max_vertices`.
+Balasan 200: `{data: {distance_m, perimeter_m, area_m2}}` (string 3 desimal; `perimeter_m` dan `area_m2` hanya untuk `area`, selain itu `null`).
+`distance_m` = panjang jalur terbuka (haversine); `perimeter_m` = jalur tertutup. Luas = shoelace pada koordinat UTM.
+Mode `area`: semua titik harus dalam satu zona UTM 46 sampai 54, bila tidak 422 pada `points`. Titik di dua sisi ekuator tetap dihitung.
+Luas adalah luas **grid UTM**, tidak dikoreksi faktor skala (selisih sekitar 0,08% di dekat meridian tengah); bukan untuk keperluan kadaster.
+
+**`MeasureTool.vue` (3.3b):** kontrak ditulis sebelum implementasi.
+
 ---
 
 ## Referensi
