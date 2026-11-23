@@ -820,6 +820,26 @@ Parent hanya mengizinkan satu alat aktif (rute atau ukur) dan menambah titik ke 
 Mode Jarak atau Luas; tombol Mulai Ukur, Urungkan, Kosongkan, Hitung (aktif bila titik >= 2 untuk Jarak, >= 3 untuk Luas), Selesai.
 Hasil dari `outdoor.measure`; galat 422 tampil apa adanya. Mengubah mode atau titik menghapus hasil lama.
 
+### 19.3 HUD navigasi (3.4)
+**Fungsi murni (3.4a, `recorderFilter.js`):**
+- `bearingDeg(from, to)`: azimut awal 0 sampai 360 derajat dari utara geografis (utara grid dan magnetis tidak dikoreksi).
+- `movingSpeedMps(samples, nowMs, windowS = 60)`: `samples = [{lat, lng, t}]`; memakai sampel dalam jendela `windowS` detik terakhir;
+  kecepatan = perpindahan bersih (titik terlama ke terbaru) dibagi selisih waktu, `null` bila kurang dari 2 sampel atau waktu tidak maju.
+  Perpindahan bersih dipilih agar jitter GPS saat diam tidak terbaca sebagai kecepatan.
+- `etaSeconds(distanceM, speedMps, minSpeedMps)`: `null` bila kecepatan `null` atau di bawah `minSpeedMps` (inklusif di ambang), selain itu jarak dibagi kecepatan.
+
+**`NavigationHud.vue` (3.4b, lazy-loaded; section "Navigasi" di sidebar `Index.vue`):**
+```js
+defineProps({
+  waypoints:   { type: Array,  default: () => [] },   // [{ id, name, lat, lng, category }]
+  minSpeedMps: { type: Number, required: true },      // config stats_moving_speed_min_mps
+})
+defineEmits([])
+```
+Pilih waypoint tujuan, tombol Mulai Navigasi (menjalankan `watchPosition` sendiri) dan Berhenti. Tampilan: jarak (haversine), bearing (derajat dan arah mata angin),
+kecepatan dan ETA ("—" bila `etaSeconds` null). `OutdoorController::index` menambah prop `movingSpeedMinMps`.
+Belum ada garis ke tujuan di peta.
+
 ---
 
 ## Referensi

@@ -84,3 +84,34 @@ export function toPayloadPoint(position) {
     recorded_at: new Date(position.timestamp).toISOString(),
   }
 }
+
+const toDeg = (rad) => (rad * 180) / Math.PI
+
+/** Initial great-circle bearing in degrees [0, 360) from `from` to `to`. */
+export function bearingDeg(from, to) {
+  const p1 = toRad(from.lat)
+  const p2 = toRad(to.lat)
+  const dl = toRad(to.lng - from.lng)
+  const y = Math.sin(dl) * Math.cos(p2)
+  const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl)
+  return (toDeg(Math.atan2(y, x)) + 360) % 360
+}
+
+/**
+ * Speed (m/s) from the NET displacement across the last `windowS` seconds.
+ * shortcut: net displacement underestimates speed on winding paths; used because GPS jitter at rest would inflate a path-length speed.
+ */
+export function movingSpeedMps(samples, nowMs, windowS = 60) {
+  const recent = samples.filter((s) => s.t >= nowMs - windowS * 1000 && s.t <= nowMs)
+  if (recent.length < 2) return null
+  const first = recent[0]
+  const last = recent[recent.length - 1]
+  const dt = (last.t - first.t) / 1000
+  return dt > 0 ? haversineM(first, last) / dt : null
+}
+
+/** Seconds to cover distanceM at speedMps; null when speed is unknown or below minSpeedMps (inclusive). */
+export function etaSeconds(distanceM, speedMps, minSpeedMps) {
+  if (typeof speedMps !== 'number' || !Number.isFinite(speedMps) || speedMps < minSpeedMps) return null
+  return distanceM / speedMps
+}
