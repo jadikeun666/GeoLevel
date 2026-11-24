@@ -878,6 +878,7 @@ Tanpa elevasi: pesan "Track ini tidak punya data elevasi", tanpa grafik. DEM eks
 
 ### 20.3 Utang teknis dan belum terverifikasi
 - **Syarat penutup Fase 3 belum terpenuhi:** verifikasi manual terhadap alat lain (konversi koordinat dan jarak/luas dibandingkan dengan alat yang sudah dipercaya).
+  Sesi ditutup 2026-11-24 tanpa hasil verifikasi dari pengembang. Track demo (id 23): 120 titik, semuanya ber-`ele`, jadi grafik profil seharusnya tampil.
 - HUD belum diuji dengan GPS nyata di HP; belum ada garis ke tujuan di peta.
 - Apakah grafik profil tampil untuk track nyata (bukan hanya pesan "tidak punya data elevasi") belum dilihat manusia.
 - Galat halaman `Cannot read properties of null (reading 'component')` di `/login` (halaman Blade Breeze memuat `app.js` Inertia); sudah ada sebelum Outdoor, belum diperbaiki.

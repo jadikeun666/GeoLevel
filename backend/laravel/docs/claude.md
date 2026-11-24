@@ -924,3 +924,9 @@ Ringkasan; sumber kebenaran `docs/outdoor.md` bagian 19 dan 20.
 - Profil: `outdoor.tracks.profile`, `ElevationProfileChart.vue` di halaman detail track.
 - Tes: PHPUnit 397, `npm run test:js` 14, e2e `outdoor*.spec.ts`. Nilai acuan UTM/MGRS berasal dari PROJ/GeoTrans, bukan hitungan sendiri.
 - Belum selesai: verifikasi manual vs alat lain (syarat penutup Fase 3).
+
+## Next Session (setelah Outdoor Fase 3)
+
+- Fase 1 sampai 3 terimplementasi; Fase 3 belum resmi selesai (menunggu verifikasi manual vs alat lain, `docs/outdoor.md` 20.3).
+- Serah-terima rinci: `docs/outdoor-fase3-handoff.md`. Fase 4 (PWA, cache tile, antrean offline) belum dimulai; Fase 5 (AI) belum dimulai.
+- Suite terakhir: PHPUnit 397, `npm run test:js` 14, e2e `outdoor*.spec.ts`.
