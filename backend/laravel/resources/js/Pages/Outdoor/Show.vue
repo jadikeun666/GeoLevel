@@ -29,6 +29,8 @@
 
       <OutdoorMap :tracks="mapTracks" :waypoints="[]" :selected-track-id="track.id" height="560px" />
 
+      <ElevationProfileChart :track-id="track.id" />
+
       <div class="flex justify-end">
         <button type="button" @click="deleteTrack"
                 class="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">
@@ -46,6 +48,7 @@ import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
 const OutdoorMap = defineAsyncComponent(() => import('@/Components/Outdoor/OutdoorMap.vue'))
+const ElevationProfileChart = defineAsyncComponent(() => import('@/Components/Outdoor/ElevationProfileChart.vue'))
 
 const props = defineProps({
   track: { type: Object, required: true },
