@@ -915,3 +915,12 @@ Ringkasan; sumber kebenaran `docs/outdoor.md` bagian 17 dan 18.
 - Tes: `npm run test:js` (node:test), `php artisan test` (379), e2e `outdoor*.spec.ts`. Jalankan `OutdoorDemoSeeder` dulu.
 - Fase 2 selesai; uji HP nyata lewat tunnel dilaporkan berhasil (2026-11-22).
 - Jangan pakai `| tail` di rantai `&&` yang memuat test (status keluar pipe menutupi kegagalan).
+
+
+## Outdoor Fase 3 (koordinat, ukur, navigasi, profil)
+
+Ringkasan; sumber kebenaran `docs/outdoor.md` bagian 19 dan 20.
+- Konversi dan ukur di backend (`GeoMathService`, endpoint `outdoor.convert` dan `outdoor.measure`); HUD memakai fungsi murni di `recorderFilter.js`.
+- Profil: `outdoor.tracks.profile`, `ElevationProfileChart.vue` di halaman detail track.
+- Tes: PHPUnit 397, `npm run test:js` 14, e2e `outdoor*.spec.ts`. Nilai acuan UTM/MGRS berasal dari PROJ/GeoTrans, bukan hitungan sendiri.
+- Belum selesai: verifikasi manual vs alat lain (syarat penutup Fase 3).

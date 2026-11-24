@@ -858,6 +858,34 @@ Tanpa elevasi: pesan "Track ini tidak punya data elevasi", tanpa grafik. DEM eks
 
 ---
 
+## 20. Status Implementasi Fase 3 (hasil; bila bertentangan dengan 10 dan 19, bagian ini berlaku)
+
+### 20.1 Dibangun
+- Backend: `GeoMathService::toUtm`, `fromUtm`, `toMgrs`, `toDms`, `measure` (deret Krüger n^4; nilai acuan test dari PROJ dan GeoTrans);
+  endpoint `outdoor.convert`, `outdoor.measure`, `outdoor.tracks.profile`; `TrackService::profile`; kunci config `wgs84_a`, `wgs84_inv_f`, `utm_scale_factor`, `profile_max_points`.
+- Frontend: `CoordinateConverter.vue`, `MeasureTool.vue`, `NavigationHud.vue`, `ElevationProfileChart.vue`; fungsi murni `bearingDeg`, `movingSpeedMps`, `etaSeconds`
+  di `recorderFilter.js`; prop halaman `defaultCoordinateFormat`, `movingSpeedMinMps`.
+- Pengujian: PHPUnit 397; `npm run test:js` 14 tes; e2e `outdoor-convert`, `outdoor-measure`, `outdoor-navigation`, `outdoor-profile` (masing-masing 1).
+
+### 20.2 Penyimpangan dan keputusan desain
+- Konversi hanya di backend (satu implementasi), frontend memanggil endpoint; tidak ada pustaka konversi kedua di JS (menyimpang dari bagian 10 yang mengandaikan dua implementasi).
+- MGRS hanya satu arah (koordinat ke MGRS), presisi 1 m; zona hanya 46 sampai 54.
+- Luas = luas grid UTM tanpa koreksi faktor skala (sekitar 0,08% di dekat meridian tengah); bukan untuk kadaster. Titik beda zona: 422 pada mode luas.
+- Kecepatan HUD dari perpindahan bersih 60 detik terakhir, bukan panjang jalur (jitter GPS saat diam tidak terbaca sebagai gerak).
+- Profil elevasi dikurangi dengan min/maks per bucket (bukan RDP); jarak kumulatif dari semua titik track.
+- Alat Ukur memakai ulang mode gambar peta milik perencana rute; hanya satu alat aktif sekaligus.
+- DEM eksternal ditunda (keputusan terbuka #4).
+
+### 20.3 Utang teknis dan belum terverifikasi
+- **Syarat penutup Fase 3 belum terpenuhi:** verifikasi manual terhadap alat lain (konversi koordinat dan jarak/luas dibandingkan dengan alat yang sudah dipercaya).
+- HUD belum diuji dengan GPS nyata di HP; belum ada garis ke tujuan di peta.
+- Apakah grafik profil tampil untuk track nyata (bukan hanya pesan "tidak punya data elevasi") belum dilihat manusia.
+- Galat halaman `Cannot read properties of null (reading 'component')` di `/login` (halaman Blade Breeze memuat `app.js` Inertia); sudah ada sebelum Outdoor, belum diperbaiki.
+- Sidebar `/outdoor` makin panjang; kolom peta belum menempel di layar saat sidebar digulir.
+- Test berjalan di SQLite; perilaku PostgreSQL untuk endpoint baru tidak diuji otomatis.
+
+---
+
 ## Referensi
 
 - `docs/map.md` — stack peta, `mapStyle.js`, pola `waitForStyleReady()`
