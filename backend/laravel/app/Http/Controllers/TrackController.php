@@ -67,6 +67,13 @@ class TrackController extends Controller
         return response()->json(['data' => $this->tracks->geometry($track)]);
     }
 
+    public function profile(Track $track): JsonResponse
+    {
+        $this->authorize('view', $track);
+
+        return response()->json(['data' => $this->tracks->profile($track)]);
+    }
+
     public function destroy(Track $track): JsonResponse
     {
         $this->authorize('delete', $track);

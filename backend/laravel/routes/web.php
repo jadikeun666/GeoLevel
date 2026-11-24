@@ -118,5 +118,6 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/outdoor/routes/{outdoorRoute}', [OutdoorRouteController::class, 'destroy'])->name('outdoor.routes.destroy');
     Route::delete('/outdoor/tracks/{track}', [TrackController::class, 'destroy'])->name('outdoor.tracks.destroy');
     Route::get   ('/outdoor/tracks/{track}/geometry', [TrackController::class, 'geometry'])->name('outdoor.tracks.geometry');
+    Route::get   ('/outdoor/tracks/{track}/profile',  [TrackController::class, 'profile'])->name('outdoor.tracks.profile');
     Route::get   ('/outdoor/tracks/{track}',          [TrackController::class, 'show'])->name('outdoor.tracks.show');
 });

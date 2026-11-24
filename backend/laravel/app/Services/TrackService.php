@@ -81,4 +81,69 @@ class TrackService
             'tolerance_m'      => $tolerance,
         ];
     }
+
+    /**
+     * Elevation profile for display: cumulative distance (m, over ALL points) vs GPS elevation.
+     * shortcut: min/max per bucket keeps peaks and valleys but not the exact shape in between; use RDP in the distance-elevation plane if fidelity matters.
+     *
+     * @return array{points: list<array{d: float, ele: float}>, has_elevation: bool, point_count: int, gain_m: ?string, loss_m: ?string, min_ele: ?string, max_ele: ?string}
+     */
+    public function profile(Track $track): array
+    {
+        $max  = max(4, (int) config('geolevel.outdoor.profile_max_points'));
+        $pts  = [];
+        $d    = 0.0;
+        $prev = null;
+        $all  = 0;
+
+        $rows = DB::table('track_points')
+            ->where('track_id', $track->id)
+            ->orderBy('seq')
+            ->select('lat', 'lng', 'ele')
+            ->cursor();
+
+        foreach ($rows as $row) {
+            $all++;
+            if ($prev !== null) {
+                $d += $this->geo->haversine($prev->lat, $prev->lng, $row->lat, $row->lng);
+            }
+            $prev = $row;
+            if ($row->ele !== null) {
+                $pts[] = [$d, (float) $row->ele];
+            }
+        }
+
+        $n = count($pts);
+        if ($n > $max) {
+            $size = (int) ceil($n / intdiv($max, 2));
+            $keep = [0 => true, $n - 1 => true];
+            for ($start = 0; $start < $n; $start += $size) {
+                $end = min($start + $size, $n);
+                $lo  = $hi = $start;
+                for ($i = $start + 1; $i < $end; $i++) {
+                    if ($pts[$i][1] < $pts[$lo][1]) {
+                        $lo = $i;
+                    }
+                    if ($pts[$i][1] > $pts[$hi][1]) {
+                        $hi = $i;
+                    }
+                }
+                $keep[$lo] = true;
+                $keep[$hi] = true;
+            }
+            ksort($keep);
+            $source = $pts;
+            $pts    = array_map(fn (int $i) => $source[$i], array_keys($keep));
+        }
+
+        return [
+            'points'        => array_map(fn (array $p) => ['d' => round($p[0], 1), 'ele' => round($p[1], 2)], $pts),
+            'has_elevation' => $n > 0,
+            'point_count'   => $all,
+            'gain_m'        => $track->elevation_gain_m,
+            'loss_m'        => $track->elevation_loss_m,
+            'min_ele'       => $track->min_elevation,
+            'max_ele'       => $track->max_elevation,
+        ];
+    }
 }

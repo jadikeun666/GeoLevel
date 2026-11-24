@@ -122,6 +122,7 @@ return [
         'stats_moving_speed_min_mps'        => 0.3,
         'simplify_tolerance_display_m'      => 2,
         'simplify_tolerance_ai_m'           => 10,
+        'profile_max_points'                => 500,   // elevation profile: approx. points returned (min/max per bucket)
 
         // Peta & offline
         'tile_cache_max_mb'        => 200,

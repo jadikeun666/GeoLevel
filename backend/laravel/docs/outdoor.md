@@ -840,6 +840,22 @@ Pilih waypoint tujuan, tombol Mulai Navigasi (menjalankan `watchPosition` sendir
 kecepatan dan ETA ("—" bila `etaSeconds` null). `OutdoorController::index` menambah prop `movingSpeedMinMps`.
 Belum ada garis ke tujuan di peta.
 
+### 19.4 Profil elevasi (3.5)
+**Endpoint (3.5a):** `GET outdoor/tracks/{track}/profile` (nama `outdoor.tracks.profile`), otorisasi `view`.
+Balasan 200: `{data: {points: [{d, ele}], has_elevation, point_count, gain_m, loss_m, min_ele, max_ele}}`.
+- `d` = jarak kumulatif meter (haversine, dari **semua** titik track, 1 desimal); `ele` = elevasi GPS (2 desimal). Hanya titik ber-`ele` masuk `points`.
+- Bila jumlah titik ber-`ele` melebihi `profile_max_points` (500), diambil titik min dan maks `ele` per bucket, ditambah titik pertama dan terakhir,
+  sehingga puncak dan lembah tetap terlihat (jumlah akhir paling banyak sekitar `profile_max_points` + 2). Hanya untuk tampilan; `track_points` tidak diubah.
+- `gain_m`, `loss_m`, `min_ele`, `max_ele` diambil dari kolom `tracks` (hasil `FinalizeTrackJob`/impor), bisa `null`; `has_elevation` false bila tidak ada titik ber-`ele`.
+
+**`ElevationProfileChart.vue` (3.5b, lazy-loaded; di `Outdoor/Show.vue`):**
+```js
+defineProps({ trackId: { type: Number, required: true } })   // memuat profil sendiri lewat outdoor.tracks.profile
+defineEmits([])
+```
+Chart.js via `vue-chartjs` (garis, sumbu x jarak, sumbu y elevasi). Judul wajib memuat "Elevasi GPS, bukan hasil leveling".
+Tanpa elevasi: pesan "Track ini tidak punya data elevasi", tanpa grafik. DEM eksternal tetap ditunda (keputusan terbuka #4).
+
 ---
 
 ## Referensi
