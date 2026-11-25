@@ -887,6 +887,45 @@ Tanpa elevasi: pesan "Track ini tidak punya data elevasi", tanpa grafik. DEM eks
 
 ---
 
+## 21. Fase 4: Offline (kontrak; ditulis sebelum implementasi, bila bertentangan dengan 9, bagian ini berlaku)
+
+### 21.1 Keputusan (2026-11-25)
+- Cache tile yang pernah dilihat saja. PMTiles milik sendiri ditunda (keputusan terbuka #3).
+- Batas default config: `tile_cache_max_mb` 200, `tile_cache_ttl_days` 30. Cakupan Service Worker hanya `/outdoor*`.
+
+### 21.2 Syarat provider (dicek 2026-11-25)
+- CARTO: gratis dengan key; boleh dibatasi atau dicabut kapan saja; atribusi wajib. Tidak ditemukan pernyataan eksplisit tentang caching pasif di browser.
+- Esri World Imagery: layer ini tidak ditujukan untuk ekspor tile offline (ada layer ekspor terpisah yang berotentikasi). Larangan menyasar ekspor massal; caching pasif tile yang dilihat tidak disebut eksplisit.
+- Karena itu: cache pasif saja, tanpa prefetch area, tanpa unduh massal, TTL dibatasi. Risiko tafsir syarat Esri ditanggung pemilik proyek.
+- Key CARTO terdaftar sebelum 23 September 2026 yang dipakai komersial berhenti berlaku 30 November 2026; pemakaian non-komersial tidak terpengaruh.
+
+### 21.3 Yang sudah ada (tidak diubah)
+Antrean titik offline: `recorderQueue.js` (IndexedDB `geolevel-outdoor` v1) dengan retry batch idempoten sejak Fase 2. Fase 4 tidak menyentuhnya.
+
+### 21.4 Service Worker tile
+- Berkas `public/sw.js`, skrip klasik, tanpa dependensi baru. Parameter dari URL pendaftaran: `/sw.js?max=<MB>&ttl=<hari>&trim=<jumlah put>`; nilai berasal dari config (bukan hardcode di sw.js). Mengubah config mengubah URL, sehingga SW diperbarui otomatis.
+- Pendaftaran: `navigator.serviceWorker.register(url, { scope: '/outdoor', updateViaCache: 'none' })` dari `Outdoor/Index.vue` lewat satu helper kecil. `updateViaCache: 'none'` dipakai karena Nginx menyajikan semua `.js` dengan `immutable` 1 tahun.
+- Dicegat hanya: GET ke host `*.basemaps.cartocdn.com` dan `server.arcgisonline.com`. Yang lain lolos tanpa disentuh. Halaman HTML dan aset build tidak di-cache (tidak ada data terautentikasi di cache).
+- Cache key: CARTO = `https://basemaps.cartocdn.com` + path tanpa query dan tanpa subdomain; Esri = URL apa adanya. Nama cache `geolevel-tiles-v1`.
+- Strategi: cache-first. Respons yang disimpan hanya status 200 bertipe `cors`, dengan header sintetis `x-cached-at` (ms) dan `x-size` (byte). Entri lebih tua dari TTL dicoba diperbarui ke jaringan; bila jaringan gagal, entri kedaluwarsa tetap dipakai.
+- Pangkas: setiap `trim` put dan saat `activate`: hapus entri kedaluwarsa, lalu entri tertua sampai total `x-size` di bawah `max` MB.
+- Peta di `/projects/*` (survei sipat datar) tidak tercakup, sesuai keputusan.
+- Config baru: `outdoor.tile_cache_trim_every` = 100. `OutdoorController::index` menambah prop `tileCache` = `{max_mb, ttl_days, trim_every}`.
+- Halaman `Outdoor/Show` tercakup setelah SW terdaftar lewat kunjungan pertama ke `/outdoor`.
+
+### 21.5 Pengujian
+- Fungsi murni di `sw.js` (normalisasi key, cek kedaluwarsa, pemilihan entri yang dipangkas) diekspor lewat `module.exports` yang dijaga `typeof module`, diuji `node --test`.
+- PHPUnit: prop `tileCache` pada `outdoor.index`.
+- Manual (WebGL dan SW tidak dinilai e2e): buka peta, geser dan zoom, matikan jaringan di DevTools (Application, Service Workers, Offline), muat ulang area yang sama; tile lama tampil.
+
+### 21.6 Tidak dikerjakan di Fase 4
+Manifest dan ikon (installability), cache halaman HTML (cold start offline), UI "bersihkan cache", prefetch area, PMTiles.
+
+### 21.7 Selesai bila
+Tile yang pernah dilihat tampil saat offline di HP nyata, dan rekam offline lalu sinkron tanpa kehilangan titik (teruji sejak Fase 2).
+
+---
+
 ## Referensi
 
 - `docs/map.md` — stack peta, `mapStyle.js`, pola `waitForStyleReady()`
