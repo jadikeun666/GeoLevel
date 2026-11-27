@@ -53,6 +53,11 @@ class OutdoorController extends Controller
             'routeMaxVertices' => (int) config('geolevel.outdoor.route_max_vertices'),
             'defaultCoordinateFormat' => config('geolevel.outdoor.default_coordinate_format'),
             'movingSpeedMinMps' => (float) config('geolevel.outdoor.stats_moving_speed_min_mps'),
+            'tileCache' => [
+                'max_mb' => (int) config('geolevel.outdoor.tile_cache_max_mb'),
+                'ttl_days' => (int) config('geolevel.outdoor.tile_cache_ttl_days'),
+                'trim_every' => (int) config('geolevel.outdoor.tile_cache_trim_every'),
+            ],
         ]);
     }
 }

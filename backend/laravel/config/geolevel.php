@@ -128,6 +128,7 @@ return [
         'tile_cache_max_mb'        => 200,
         'tile_cache_ttl_days'      => 30,
         'offline_queue_max_points' => 20000,
+        'tile_cache_trim_every'    => 100,   // Service Worker: pangkas cache tiap N tile disimpan
 
         // Ekspor
         'export_disk' => 'local',
